@@ -1,0 +1,19 @@
+{
+  "name": "automate",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.14.0",
+  "dependencies": {
+    "@playwright/test": "^1.55.0",
+    "googleapis": "^156.0.0",
+    "playwright": "^1.55.0"
+  }
+}
