@@ -1,0 +1,5 @@
+"orderNo","message","status"
+"PO16449746","Error while processing order","error"
+"PO16484445","order no: PO16484445 amount having amount = 0 is less than total invoice base amount = 236028.55","skipped"
+"PO16484447","order no: PO16484447 amount having amount = 0.01 is less than total invoice base amount = 173296.71","skipped"
+"PO164844989","Order not found in on the portal with this id!","skipped"
