@@ -18,7 +18,6 @@ async function login(page) {
   await page.fill('input[name="j_password"]', CONFIG.password);
   await page.click('button[id="proceed"]');
   await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(3000);
 }
 
 async function navigateToDocumentManager(page) {
@@ -112,7 +111,9 @@ const getCSVData = (path) => {
 };
 
 function saveToCSV(filename, jsonArray) {
+  console.log('jsonArrayL ', jsonArray);
   const parser = new Parser();
+  if (jsonArray.length === 0) return;
   const csv = parser.parse(jsonArray);
   fs.writeFileSync(filename, csv, 'utf8');
 }
@@ -121,7 +122,8 @@ async function main() {
   const processedOrder = [];
   let rows = getCSVData(CONFIG.dataFile);
   const process = getCSVData(CONFIG.processedOrderFile);
-
+  console.log('rowsL ', rows);
+  console.log('process ', process);
   rows = rows.filter(
     (row) => process.find((p) => p.orderNo === row.orderNo)?.status !== 'error'
   );
@@ -157,13 +159,19 @@ async function main() {
 
     await login(page);
 
+    // await page.locator('#pendo-close-guide-c54441cf').click();
     const dataObjects = rows;
     for (const orderIndex in dataObjects) {
       const order = dataObjects[orderIndex];
-
       console.log(`Processing order: ${order['Order no']}`);
+      // await page.waitForLoadState('networkidle');
 
       try {
+        // await page.goto(
+        //   'https://go.tradeshift.com/#/Tradeshift.DocumentManager/0',
+        //   { waitUntil: 'networkidle' }
+        // );
+
         // Always navigate to Document Manager at the start of each order
         await navigateToDocumentManager(page);
         if (orderIndex > 0) {
@@ -233,6 +241,12 @@ async function main() {
           .contentFrame()
           .locator('div')
           .filter({ hasText: /^Unselect all$/ })
+          .nth(1)
+          .click();
+        await page
+          .locator('iframe[name="main-app-iframe"]')
+          .contentFrame()
+          .getByText('Unselect all')
           .nth(1)
           .click();
         await page.waitForTimeout(1000);
@@ -439,21 +453,21 @@ async function main() {
             .locator('input') // <-- target the input if present
             .fill(formatted);
 
-          // await page
-          //   .locator('iframe[name="main-app-iframe"]')
-          //   .contentFrame()
-          //   .locator('iframe[name="legacy-frame"]')
-          //   .contentFrame()
-          //   .getByRole('textbox', { name: 'IRN (Invoice Reference Number)' })
-          //   .click();
+          await page
+            .locator('iframe[name="main-app-iframe"]')
+            .contentFrame()
+            .locator('iframe[name="legacy-frame"]')
+            .contentFrame()
+            .getByRole('textbox', { name: 'IRN (Invoice Reference Number)' })
+            .click();
 
-          // await page
-          //   .locator('iframe[name="main-app-iframe"]')
-          //   .contentFrame()
-          //   .locator('iframe[name="legacy-frame"]')
-          //   .contentFrame()
-          //   .getByRole('textbox', { name: 'IRN (Invoice Reference Number)' })
-          //   .fill(irnNo);
+          await page
+            .locator('iframe[name="main-app-iframe"]')
+            .contentFrame()
+            .locator('iframe[name="legacy-frame"]')
+            .contentFrame()
+            .getByRole('textbox', { name: 'IRN (Invoice Reference Number)' })
+            .fill(irnNo);
 
           // if (orderIndex == 0)
           //   await page
@@ -529,33 +543,32 @@ async function main() {
               .click(),
           ]);
 
-          console.log('wait is over');
-          const errorExists = await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .getByText(/^Invoice is not valid/i) // regex, starts with "Invoice is not valid"
-            .isVisible();
+          const mainFrame = page
+            .frameLocator('iframe[name="main-app-iframe"]')
+            .frameLocator('iframe[name="legacy-frame"]');
 
-          console.log('errorExists: ', errorExists);
+          await mainFrame.locator('ul.messageContainer.error').waitFor();
 
-          if (errorExists) {
-            const messages = await page
-              .locator('iframe[name="main-app-iframe"]')
-              .contentFrame()
-              .locator('iframe[name="legacy-frame"]')
-              .contentFrame()
-              .locator('ul.messageContainer li')
-              .allTextContents();
-            console.log('messageS: ', messages);
+          const errorList = mainFrame.locator('ul.messageContainer.error');
+          console.log('errorListL ', errorList);
+          const errors = await mainFrame
+            .locator('ul.messageContainer.error > li')
+            .allTextContents();
+          console.log('errors: ', errors);
+          if ((await errorList.count()) > 0) {
+            console.log('❌ Error list exists');
+
             processedOrder.push({
               orderNo: order['Order no'],
               message: `Order have not been successfully processd! Reason :${messages}`,
-              status: 'processed',
+              status: 'invalid data',
               timestamp: new Date().toISOString(),
+              errors: errors,
             });
+
+            console.log(errors);
           } else {
+            console.log('✅ No error list found');
             processedOrder.push({
               orderNo: order['Order no'],
               message: 'Order have been successfully processd!',
@@ -563,6 +576,7 @@ async function main() {
               timestamp: new Date().toISOString(),
             });
           }
+
           await page.waitForTimeout(30000 / 2);
         } else {
           console.log(
@@ -611,9 +625,10 @@ async function main() {
     console.log('Processing completed');
     console.log('Browser will stay open. Press Ctrl+C to quit.');
   } catch (error) {
+    console.log('error: ', error);
   } finally {
     saveToCSV(CONFIG.processedOrderFile, processedOrder);
-    await main();
+    if (processedOrder.filter((p) => p.status === 'error').length) await main();
   }
 
   await new Promise(() => {});
