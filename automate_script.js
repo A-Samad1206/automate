@@ -1,23 +1,25 @@
-import { chromium } from 'playwright';
-import { Parser } from 'json2csv';
+import { chromium } from "playwright";
+import { Parser } from "json2csv";
 
-import fs from 'fs';
-import { parse } from 'csv-parse/sync';
-import { CONFIG } from './config.js';
+import fs from "fs";
+import { parse } from "csv-parse/sync";
+import { CONFIG } from "./config.js";
+
+const processedOrder = [];
 
 async function login(page) {
-  await page.goto('https://go.tradeshift.com');
+  await page.goto("https://go.tradeshift.com");
   try {
-    await page.click('#cookie-consent-accept-all', { timeout: 3000 });
-    console.log('Cookie consent accepted.');
+    await page.click("#cookie-consent-accept-all", { timeout: 3000 });
+    console.log("Cookie consent accepted.");
   } catch {
-    console.log('Cookie consent button not found — skipping.');
+    console.log("Cookie consent button not found — skipping.");
   }
 
   await page.fill('input[name="j_username"]', CONFIG.username);
   await page.fill('input[name="j_password"]', CONFIG.password);
   await page.click('button[id="proceed"]');
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState("networkidle");
 }
 
 async function navigateToDocumentManager(page) {
@@ -30,9 +32,9 @@ async function navigateToDocumentManager(page) {
 
       // Use domcontentloaded instead of networkidle for faster navigation
       await page.goto(
-        'https://go.tradeshift.com/#/Tradeshift.DocumentManager',
+        "https://go.tradeshift.com/#/Tradeshift.DocumentManager",
         {
-          waitUntil: 'domcontentloaded',
+          waitUntil: "domcontentloaded",
           timeout: 30000,
         }
       );
@@ -48,44 +50,43 @@ async function navigateToDocumentManager(page) {
         .contentFrame();
 
       // Wait for the filter button specifically as it indicates the page is ready
-      await mainFrame.getByRole('button', { name: ')Filter' }).waitFor({
-        state: 'visible',
+      await mainFrame.getByRole("button", { name: ")Filter" }).waitFor({
+        state: "visible",
         timeout: 20000,
       });
 
       // Additional check to ensure the search functionality is available
-      await mainFrame.getByRole('textbox', { name: 'Search' }).waitFor({
-        state: 'visible',
+      await mainFrame.getByRole("textbox", { name: "Search" }).waitFor({
+        state: "visible",
         timeout: 15000,
       });
 
       navigationSuccess = true;
-      console.log('Navigation to Document Manager successful');
-      await page.waitForTimeout(1000);
+      console.log("Navigation to Document Manager successful");
     } catch (navError) {
       console.log(`Navigation failed: ${navError.message}`);
       retries--;
       if (retries === 0) {
-        console.log('All navigation attempts failed, trying page reload...');
+        console.log("All navigation attempts failed, trying page reload...");
         try {
           await page.reload({
-            waitUntil: 'networkidle',
-            timeout: 30000,
+            waitUntil: "domcontentloaded",
+            timeout: 60000,
           });
           await page.waitForTimeout(2000);
           // Try one more time after reload
           await page.goto(
-            'https://go.tradeshift.com/#/Tradeshift.DocumentManager',
+            "https://go.tradeshift.com/#/Tradeshift.DocumentManager",
             {
-              waitUntil: 'domcontentloaded',
-              timeout: 30000,
+              waitUntil: "domcontentloaded",
+              timeout: 60000,
             }
           );
           await page.waitForSelector('iframe[name="main-app-iframe"]', {
             timeout: 20000,
           });
           navigationSuccess = true;
-          console.log('Navigation successful after reload');
+          console.log("Navigation successful after reload");
         } catch (reloadError) {
           throw new Error(
             `Failed to navigate to Document Manager: ${reloadError.message}`
@@ -97,509 +98,607 @@ async function navigateToDocumentManager(page) {
     }
   }
 }
-const getCSVData = (path) => {
+
+const getObjFromRow = (row) => {
+  const orderNo = row["Order no"];
+  const invoiceNo = row["HFS Invoice No"];
+  const invoiceDate = row["HFS Invoice Date"];
+  const irnNo = row["IRN NO"];
+  const businessArea = row["Business Area"];
+  const totalInvoiceBaseAmount = parseFloat(
+    row["Total Invoice Base Amount"].split(",").join("")
+  );
+
+  const hsnSac = row["HSN/SAC"];
+  const sac = row["SAC"];
+
+  const choosenFile = row["HFS Invoice No"];
+
+  return {
+    orderNo,
+    invoiceNo,
+    invoiceDate,
+    irnNo,
+    businessArea: businessArea || "C002",
+    totalInvoiceBaseAmount,
+    hsnSac: hsnSac || "SAC",
+    sac: sac || 998599,
+    choosenFile: `${choosenFile}.pdf`,
+  };
+};
+const getObj = (order) => {
+  return {
+    orderNo: order.orderNo,
+    invoiceNo: order.invoiceNo,
+    invoiceDate: order.invoiceDate,
+    irnNo: order.irnNo,
+    businessArea: order.businessArea,
+    totalInvoiceBaseAmount: order.totalInvoiceBaseAmount,
+    hsnSac: order.hsnSac,
+    sac: order.sac,
+    choosenFile: order.choosenFile,
+  };
+};
+const isMissing = (row) => {
+  return (
+    !row.orderNo ||
+    !row.invoiceNo ||
+    !row.invoiceDate ||
+    !row.irnNo ||
+    !row.businessArea ||
+    !row.totalInvoiceBaseAmount ||
+    !row.hsnSac ||
+    !row.sac ||
+    !row.choosenFile
+  );
+};
+
+const getCSVData = () => {
   try {
-    const file = fs.readFileSync(path);
+    const file = fs.readFileSync(CONFIG.dataFile);
     const records = parse(file, {
       columns: true, // converts to array of objects
       skip_empty_lines: true,
-    });
-    return records;
-  } catch {
-    return [];
+    }).map((o) => getObjFromRow(o));
+
+    console.log(`${records.length} Rows fetched`);
+    const invalidRows = records.filter((o) => isMissing(o));
+    if (invalidRows.length > 0) {
+      console.log(`${invalidRows.length} Invalid rows found`);
+      console.log("Invalid rows :", invalidRows);
+      process.exit(1);
+    }
+
+    const validRows = records.filter((o) => !isMissing(o));
+
+    if (validRows.length === 0) {
+      console.log("No valid rows found");
+      process.exit(1);
+    }
+
+    const fileFound = validRows.map((o) => o.choosenFile);
+    const existingFiles = fileFound.filter((file) =>
+      fs.existsSync(CONFIG.pdfDir + file)
+    );
+
+    // Check for missing files
+    if (existingFiles.length < fileFound.length) {
+      const missingFiles = fileFound.filter(
+        (file) => !fs.existsSync(CONFIG.pdfDir + file)
+      );
+      console.log(
+        `Error: ${missingFiles.length} file(s) not found in ${CONFIG.pdfDir}:`
+      );
+      missingFiles.forEach((file) => console.log(`- ${file}`));
+      process.exit(1);
+    }
+
+    return validRows;
+  } catch (err) {
+    console.error("Failed to fetch records", err);
+    process.exit(1);
   }
 };
 
 function saveToCSV(filename, jsonArray) {
-  console.log('jsonArrayL ', jsonArray);
   const parser = new Parser();
   if (jsonArray.length === 0) return;
   const csv = parser.parse(jsonArray);
-  fs.writeFileSync(filename, csv, 'utf8');
+  fs.writeFileSync(filename, csv, "utf8");
+}
+async function applyFilter(page, orderNo) {
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .locator("div")
+    .filter({ hasText: /^Filter$/ })
+    .click();
+  await page.waitForTimeout(1000);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .getByRole("button", { name: ")Filter" })
+    .click();
+  await page.waitForTimeout(1000);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .getByRole("button", { name: "Document Types" })
+    .click();
+  await page.waitForTimeout(1000);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .locator(".invoice.flex-none")
+    .check();
+  await page.waitForTimeout(1000);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .getByText("Unselect all")
+    .first()
+    .click();
+  await page.waitForTimeout(1000);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .locator(".invoice.flex-none")
+    .check();
+  await page.waitForTimeout(1000);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .locator(".order.flex-none")
+    .check();
+  await page.waitForTimeout(1000);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .getByRole("button", { name: "Status" })
+    .first()
+    .click();
+  await page.waitForTimeout(1000);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .locator("div")
+    .filter({ hasText: /^Unselect all$/ })
+    .nth(1)
+    .click();
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .getByText("Unselect all")
+    .nth(1)
+    .click();
+  await page.waitForTimeout(1000);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .locator(".DELIVERED_RECEIVED.flex-none")
+    .check();
+  await page.waitForTimeout(1000);
+
+  // Clear the search field first, then fill with current order number
+  const searchBox = page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .getByRole("textbox", { name: "Search" });
+
+  await searchBox.click();
+  await searchBox.selectText();
+  await searchBox.press("Delete");
+  await page.waitForTimeout(500);
+  await searchBox.fill(orderNo);
+}
+async function applyFilter1(page, orderNo) {
+  // await page.waitForTimeout(500);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .getByRole("button", { name: ")Filter" })
+    .click();
+  console.time("Filter clicked");
+
+  await page.waitForTimeout(3000);
+
+  console.timeEnd("Filter clicked");
+  // Wait for document types button
+  // await iframe
+  //   .getByRole("button", { name: "Document Types" })
+  //   .waitFor({ state: "visible" });
+
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .getByRole("button", { name: "Document Types" })
+    .click();
+  console.log("Document Types clicked");
+  await page.waitForTimeout(500);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .getByText("Unselect all")
+    .first()
+    .click();
+  console.log("Document Types: Unselect all clicked");
+  // await page.waitForTimeout(500);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .locator(".invoice.flex-none")
+    .check();
+  console.log("Document Types: Invoice checked");
+  // await page.waitForTimeout(500);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .locator(".order.flex-none")
+    .check();
+  console.log("Document Types: Order checked");
+  // await page.waitForTimeout(500);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .getByRole("button", { name: "Status" })
+    .first()
+    .click();
+  console.log("Status clicked");
+  // await page.waitForTimeout(500);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .locator("div")
+    .filter({ hasText: /^Unselect all$/ })
+    .nth(1)
+    .click();
+  console.log("Status: Unselect all clicked");
+  // await page.waitForTimeout(500);
+  await page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .locator(".DELIVERED_RECEIVED.flex-none")
+    .check();
+  console.log("Status: DELIVERED_RECEIVED checked");
+  // await page.waitForTimeout(500);
+
+  // Clear the search field first, then fill with current order number
+  const searchBox = page
+    .locator('iframe[name="main-app-iframe"]')
+    .contentFrame()
+    .getByRole("textbox", { name: "Search" });
+
+  // await page.waitForTimeout(500);
+  await searchBox.fill(orderNo);
+  console.log(`Searching for order: ${orderNo}`);
 }
 
-async function main() {
-  const processedOrder = [];
-  let rows = getCSVData(CONFIG.dataFile);
-  const process = getCSVData(CONFIG.processedOrderFile);
-  console.log('rowsL ', rows);
-  console.log('process ', process);
-  rows = rows.filter(
-    (row) => process.find((p) => p.orderNo === row.orderNo)?.status !== 'error'
-  );
+const getPendingRows = () => {
+  let processedOrders = [];
+  const allRows = getCSVData();
 
-  // const rows = await getSheetData(sheetId, range);
+  try {
+    const file = fs.readFileSync(CONFIG.processedOrderFile);
+    processedOrders = parse(file, {
+      columns: true, // converts to array of objects
+      skip_empty_lines: true,
+    })
+      .map((o) => ({
+        orderNo: o.orderNo,
+        message: o.message,
+        status: o.status,
+        timestamp: o.timestamp,
+      }))
+      .filter((r) => r.status === "processed");
+    const allPendingRows = allRows.filter(
+      (row) => !processedOrders.find((r) => r.orderNo === row.orderNo)
+    );
+    return allPendingRows;
+  } catch (error) {
+    return allRows;
+  }
+};
+
+async function main() {
+  const rows = getPendingRows();
+  console.log(rows);
   if (!rows.length) {
     console.error(
-      'No data found. Make sure the sheet is shared with the service account email.'
+      "No data found. Make sure the sheet is shared with the service account email."
     );
     process.exit(1);
   }
 
   try {
-    // const sheetId = '1IZw-bWzeO0UGW2_wmbOHBrGLyLLLWj4xM89jWotg554';
-    // const range = 'A1:M5';
-
-    // console.log('Raw rows from Google Sheets:', rows);
-
-    // const dataObjects = convertToObjects(rows);
-    // console.log('Converted to objects:', JSON.stringify(dataObjects, null, 2));
-
     const browser = await chromium.launch({
       headless: false,
-      args: ['--start-maximized', '--start-fullscreen'],
+      args: ["--start-maximized", "--start-fullscreen"],
     });
+
     let context = await browser.newContext({
       viewport: null, // Use full screen viewport
     });
+
     let page = await context.newPage();
 
-    page.setDefaultTimeout(120000);
-    page.setDefaultNavigationTimeout(120000);
+    page.setDefaultTimeout(120 * 1000);
+    page.setDefaultNavigationTimeout(120 * 1000);
 
     await login(page);
+    // let previousPage = null;
 
-    // await page.locator('#pendo-close-guide-c54441cf').click();
-    const dataObjects = rows;
-    for (const orderIndex in dataObjects) {
-      const order = dataObjects[orderIndex];
-      console.log(`Processing order: ${order['Order no']}`);
-      // await page.waitForLoadState('networkidle');
+    for (const orderIndex in rows) {
+      const orderObj = rows[orderIndex];
+
+      const orderNo = orderObj.orderNo;
+
+      console.log(`Processing order: ${orderNo}`);
+      // Close previous tab if it exists
+      // if (previousPage) {
+      //   await previousPage.reload();
+      //   await previousPage.close();
+      //   previousPage = page = await context.newPage();
+      //   page.setDefaultTimeout(1200000);
+      //   page.setDefaultNavigationTimeout(1200000);
+      // } else {
+      //   previousPage = page;
+      // }
 
       try {
-        // await page.goto(
-        //   'https://go.tradeshift.com/#/Tradeshift.DocumentManager/0',
-        //   { waitUntil: 'networkidle' }
-        // );
-
         // Always navigate to Document Manager at the start of each order
         await navigateToDocumentManager(page);
-        if (orderIndex > 0) {
-          await page.reload({ waitUntil: 'networkidle' });
-        }
-        const orderNo = order['Order no'];
 
-        const mainFrame = page.frame({ name: 'main-app-iframe' });
-        if (!mainFrame) {
-          throw new Error('Main iframe not found');
-        }
-        await page.waitForTimeout(1000);
-
-        await page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .locator('div')
-          .filter({ hasText: /^Filter$/ })
-          .click();
-        await page.waitForTimeout(1000);
-        await page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .getByRole('button', { name: ')Filter' })
-          .click();
-        await page.waitForTimeout(1000);
-        await page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .getByRole('button', { name: 'Document Types' })
-          .click();
-        await page.waitForTimeout(1000);
-        await page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .locator('.invoice.flex-none')
-          .check();
-        await page.waitForTimeout(1000);
-        await page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .getByText('Unselect all')
-          .first()
-          .click();
-        await page.waitForTimeout(1000);
-        await page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .locator('.invoice.flex-none')
-          .check();
-        await page.waitForTimeout(1000);
-        await page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .locator('.order.flex-none')
-          .check();
-        await page.waitForTimeout(1000);
-        await page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .getByRole('button', { name: 'Status' })
-          .first()
-          .click();
-        await page.waitForTimeout(1000);
-        await page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .locator('div')
-          .filter({ hasText: /^Unselect all$/ })
-          .nth(1)
-          .click();
-        await page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .getByText('Unselect all')
-          .nth(1)
-          .click();
-        await page.waitForTimeout(1000);
-        await page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .locator('.DELIVERED_RECEIVED.flex-none')
-          .check();
-        await page.waitForTimeout(1000);
-
-        // Clear the search field first, then fill with current order number
-        const searchBox = page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .getByRole('textbox', { name: 'Search' });
-
-        await searchBox.click();
-        await searchBox.selectText();
-        await searchBox.press('Delete');
-        await page.waitForTimeout(500);
-        await searchBox.fill(orderNo);
-        console.log(`Searching for order: ${orderNo}`);
-
-        // // Apply filters
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .getByRole("button", { name: ")Filter" })
-        //   .click();
-        // await page.waitForTimeout(1000);
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .getByRole("button", { name: "Document Types" })
-        //   .click();
-        // await page.waitForTimeout(1000);
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .getByText("Unselect all")
-        //   .first()
-        //   .click();
-        // await page.waitForTimeout(1000);
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .locator(".invoice.flex-none")
-        //   .check();
-        // await page.waitForTimeout(1000);
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .locator(".order.flex-none")
-        //   .check();
-        // await page.waitForTimeout(1000);
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .getByRole("button", { name: "Status" })
-        //   .first()
-        //   .click();
-        // await page.waitForTimeout(1000);
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .locator(".DELIVERED_RECEIVED.flex-none")
-        //   .uncheck();
-        // await page.waitForTimeout(1000);
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .locator(".DELIVERED_RECEIVED.flex-none")
-        //   .check();
-        // await page.waitForTimeout(1000);
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .getByRole("button", { name: ")Filter" })
-        //   .click();
-        // await page.waitForTimeout(2000);
-
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .getByRole("textbox", { name: "Search" })
-        //   .waitFor({ state: "visible", timeout: 10000 });
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .getByRole("textbox", { name: "Search" })
-        //   .click();
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .getByRole("textbox", { name: "Search" })
-        //   .fill("");
-        // await page.waitForTimeout(500);
-        // await page
-        //   .locator('iframe[name="main-app-iframe"]')
-        //   .contentFrame()
-        //   .getByRole("textbox", { name: "Search" })
-        //   .fill(orderNo);
-        // console.log(`Searching for order: ${orderNo}`);
+        await applyFilter(page, orderNo);
+        console.log(`Applied filter for order: ${orderNo}`);
         await page.waitForTimeout(5000);
+        console.log(`Waited for 5 seconds for filter to apply`);
+        if (!page.frame({ name: "main-app-iframe" })) {
+          throw new Error("Main iframe not found");
+        }
 
         const link = page
           .locator('iframe[name="main-app-iframe"]')
           .contentFrame()
-          .getByRole('link', { name: orderNo });
+          .getByRole("link", { name: orderNo });
+        console.log(`Link for order: ${orderNo}`);
         if ((await link.count()) === 0) {
           console.log(`${orderNo}: Order not found in search results`);
           processedOrder.push({
             orderNo: orderNo,
-            message: 'Order not found in on the portal with this id!',
-            status: 'skipped',
+            message: "Order not found on the portal with this id!",
+            status: "skipped",
             timestamp: new Date().toISOString(),
           });
           continue;
         }
 
-        await link.waitFor({ state: 'visible', timeout: 15000 });
-        const trLocator = link.locator('xpath=ancestor::tr[1]');
-        const tdText = await trLocator.locator('td').nth(3).innerText();
-        console.log('Status Text: ', tdText);
+        await link.waitFor({ state: "visible", timeout: 15000 });
+        const trLocator = link.locator("xpath=ancestor::tr[1]");
+        const tdText = await trLocator.locator("td").nth(3).innerText();
+        console.log("Status Text: ", tdText);
+        console.log(`Order ${orderNo} status is "${tdText.trim()}"`);
 
-        if (tdText.trim() === 'RECEIVED') {
-          await link.click({
-            waitUntil: 'networkidle',
-            timeout: 30000,
+        if (tdText.trim() !== "RECEIVED") {
+          console.log(`Order ${orderNo} status is not "RECEIVED"`);
+          processedOrder.push({
+            orderNo: orderNo,
+            message: `Order found with status ${tdText.trim()}!`,
+            status: "skipped",
+            timestamp: new Date().toISOString(),
           });
-          // await page.waitForLoadState('networkidle');
-          await page.waitForTimeout(3000);
+          continue;
+        }
 
-          await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .getByRole('button', { name: 'Create Invoice' })
-            .click();
-          await page.waitForLoadState('networkidle');
-          await page.waitForTimeout(3000);
+        // Click on the link on order no
+        await link.click({
+          waitUntil: "domcontentloaded",
+          timeout: 30000,
+        });
 
-          const invoiceNo = order['Invoice No'];
-          const invoiceDate = order['Invoice Date'];
-          const irnNo = order['IRN NO'];
-          const businessArea = order['Business Area'];
-          const totalInvoiceBaseAmount = parseFloat(
-            order['Total Invoice Base Amount (Quantity)']
-          );
-          const hsnSac = order['HSN/SAC'];
-          const sac = order['SAC'];
-          const choosenFile = order['Choose File'];
+        console.log(`Clicked on link for order: ${orderNo}`);
+        await page
+          .locator('iframe[name="main-app-iframe"]')
+          .contentFrame()
+          .locator('iframe[name="legacy-frame"]')
+          .contentFrame()
+          .getByRole("button", { name: "Create Invoice" })
+          .click();
+        await page.waitForLoadState("domcontentloaded");
+        await page.waitForTimeout(3000);
+        console.log(`Clicked on Create Invoice for order: ${orderNo}`);
 
-          let inputValue = await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .locator('#lines_0__amount')
-            .inputValue();
-
-          inputValue = parseFloat(inputValue.replace(/,/g, ''));
-
-          if (inputValue < totalInvoiceBaseAmount) {
-            console.log(
-              `order no: ${orderNo} amount having amount = ${inputValue} is less than total invoice base amount = ${totalInvoiceBaseAmount}`
-            );
-            processedOrder.push({
-              orderNo: orderNo,
-              message: `order no: ${orderNo} amount having amount = ${inputValue} is less than total invoice base amount = ${totalInvoiceBaseAmount}`,
-              status: 'skipped',
-              timestamp: new Date().toISOString(),
-            });
-            continue;
-          }
-
-          await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .getByRole('textbox', { name: 'Invoice number' })
-            .click();
-
-          await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .getByRole('textbox', { name: 'Invoice number' })
-            .fill(invoiceNo);
-
-          const dateStr = invoiceDate;
-          const formatted = dateStr.replace(/-/g, '/');
-
-          await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .locator('div')
-            .filter({ hasText: /^Issue date \*\.\.\.$/ })
-            .locator('input') // <-- target the input if present
-            .fill(formatted);
-
-          await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .getByRole('textbox', { name: 'IRN (Invoice Reference Number)' })
-            .click();
-
-          await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .getByRole('textbox', { name: 'IRN (Invoice Reference Number)' })
-            .fill(irnNo);
-
-          // if (orderIndex == 0)
-          //   await page
-          //     .locator('iframe[name="main-app-iframe"]')
-          //     .contentFrame()
-          //     .locator('iframe[name="legacy-frame"]')
-          //     .contentFrame()
-          //     .getByText(/^Next number:/) // regex, beginning of string
-          //     .click();
-
-          await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .getByRole('textbox', { name: 'Business Area' })
-            .click();
-
-          await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .getByRole('textbox', { name: 'Business Area' })
-            .fill(businessArea);
-
-          await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .locator('#lines_0__amount')
-            .fill(totalInvoiceBaseAmount.toString());
-
-          await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .locator('#lines_0__additionalItemIdentification_value')
-            .click();
-
-          await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .locator('#lines_0__additionalItemIdentification_schemeId')
-            .selectOption(hsnSac);
-          console.log('clicking on additionalItemIdentification_value');
-          await page
-            .locator('iframe[name="main-app-iframe"]')
-            .contentFrame()
-            .locator('iframe[name="legacy-frame"]')
-            .contentFrame()
-            .locator('#lines_0__additionalItemIdentification_value')
-            .fill(sac);
-          console.log('clicking on attachment button');
-          await page
-            .frameLocator('iframe[name="main-app-iframe"]')
-            .frameLocator('iframe[name="legacy-frame"]')
-            .locator('input[name="attachment"]')
-            .setInputFiles(choosenFile);
-
-          await Promise.all([
-            // page.waitForLoadState('networkidle'),
-            page
-              .locator('iframe[name="main-app-iframe"]')
-              .contentFrame()
-              .locator('iframe[name="legacy-frame"]')
-              .contentFrame()
-              .getByRole('button', { name: 'Preview' })
-              .click(),
-          ]);
-
-          const mainFrame = page
-            .frameLocator('iframe[name="main-app-iframe"]')
-            .frameLocator('iframe[name="legacy-frame"]');
-
-          await mainFrame.locator('ul.messageContainer.error').waitFor();
-
-          const errorList = mainFrame.locator('ul.messageContainer.error');
-          console.log('errorListL ', errorList);
-          const errors = await mainFrame
-            .locator('ul.messageContainer.error > li')
-            .allTextContents();
-          console.log('errors: ', errors);
-          if ((await errorList.count()) > 0) {
-            console.log('❌ Error list exists');
-
-            processedOrder.push({
-              orderNo: order['Order no'],
-              message: `Order have not been successfully processd! Reason :${messages}`,
-              status: 'invalid data',
-              timestamp: new Date().toISOString(),
-              errors: errors,
-            });
-
-            console.log(errors);
-          } else {
-            console.log('✅ No error list found');
-            processedOrder.push({
-              orderNo: order['Order no'],
-              message: 'Order have been successfully processd!',
-              status: 'processed',
-              timestamp: new Date().toISOString(),
-            });
-          }
-
-          await page.waitForTimeout(30000 / 2);
-        } else {
+        let inputValue = await page
+          .locator('iframe[name="main-app-iframe"]')
+          .contentFrame()
+          .locator('iframe[name="legacy-frame"]')
+          .contentFrame()
+          .locator("#lines_0__amount")
+          .inputValue();
+        console.log(`Input value for order: ${inputValue}`);
+        inputValue = parseFloat(inputValue.replace(/,/g, ""));
+        const crtUrl = page.url();
+        console.log("crtUrl: ", crtUrl);
+        if (inputValue < orderObj.totalInvoiceBaseAmount) {
+          // wait for 15 sec
+          await page.waitForTimeout(15000);
           console.log(
-            `Order ${orderNo} status is "${tdText.trim()}" - skipping`
+            `order no: ${orderNo} amount on platform is: ${inputValue}, which is less than total invoice base amount found in the sheet: ${orderObj.totalInvoiceBaseAmount}`
           );
           processedOrder.push({
-            orderNo: order['Order no'],
-            message: `Order found but with status ${tdText}`,
-            status: 'skipped',
+            orderNo: orderNo,
+            message: `order no: ${orderNo} amount on platform is: ${inputValue}, which is less than total invoice base amount found in the sheet: ${orderObj.totalInvoiceBaseAmount}`,
+            status: "skipped",
             timestamp: new Date().toISOString(),
+            url: crtUrl,
           });
           continue;
         }
+
+        await page
+          .locator('iframe[name="main-app-iframe"]')
+          .contentFrame()
+          .locator('iframe[name="legacy-frame"]')
+          .contentFrame()
+          .getByRole("textbox", { name: "Invoice number" })
+          .fill(orderObj.invoiceNo);
+        console.log(`Invoice number filled for order: ${orderNo}`);
+        const dateStr = orderObj.invoiceDate;
+        const formatted = dateStr.replace(/-/g, "/");
+
+        await page
+          .locator('iframe[name="main-app-iframe"]')
+          .contentFrame()
+          .locator('iframe[name="legacy-frame"]')
+          .contentFrame()
+          .locator("div")
+          .filter({ hasText: /^Issue date \*\.\.\.$/ })
+          .locator("input") // <-- target the input if present
+          .fill(formatted);
+        console.log(`Issue date filled for order: ${orderNo}`);
+
+        await page
+          .locator('iframe[name="main-app-iframe"]')
+          .contentFrame()
+          .locator('iframe[name="legacy-frame"]')
+          .contentFrame()
+          .getByRole("textbox", { name: "IRN (Invoice Reference Number)" })
+          .fill(orderObj.irnNo);
+        console.log(`IRN filled for order: ${orderNo}`);
+
+        // if (orderIndex == 0)
+        //   await page
+        //     .locator('iframe[name="main-app-iframe"]')
+        //     .contentFrame()
+        //     .locator('iframe[name="legacy-frame"]')
+        //     .contentFrame()
+        //     .getByText(/^Next number:/) // regex, beginning of string
+        //     .click();
+
+        await page
+          .locator('iframe[name="main-app-iframe"]')
+          .contentFrame()
+          .locator('iframe[name="legacy-frame"]')
+          .contentFrame()
+          .getByRole("textbox", { name: "Business Area" })
+          .fill(orderObj.businessArea);
+
+        console.log(`Business Area filled for order: ${orderNo}`);
+
+        await page
+          .locator('iframe[name="main-app-iframe"]')
+          .contentFrame()
+          .locator('iframe[name="legacy-frame"]')
+          .contentFrame()
+          .locator("#lines_0__amount")
+          .fill(orderObj.totalInvoiceBaseAmount.toString());
+
+        console.log(`Total Invoice Base Amount filled for order: ${orderNo}`);
+
+        await page
+          .locator('iframe[name="main-app-iframe"]')
+          .contentFrame()
+          .locator('iframe[name="legacy-frame"]')
+          .contentFrame()
+          .locator("#lines_0__additionalItemIdentification_schemeId")
+          .selectOption(orderObj.hsnSac);
+
+        console.log(`HSN/SAC selected for order: ${orderNo}`);
+
+        await page
+          .locator('iframe[name="main-app-iframe"]')
+          .contentFrame()
+          .locator('iframe[name="legacy-frame"]')
+          .contentFrame()
+          .locator("#lines_0__additionalItemIdentification_value")
+          .fill(orderObj.sac.toString());
+
+        console.log(`HSN/SAC filled for order: ${orderNo}`);
+
+        await page
+          .frameLocator('iframe[name="main-app-iframe"]')
+          .frameLocator('iframe[name="legacy-frame"]')
+          .locator('input[name="attachment"]')
+          .setInputFiles(CONFIG.pdfDir + orderObj.choosenFile);
+
+        console.log(`Attachment filled for order: ${orderNo}`);
+
+        await Promise.all([
+          // page.waitForLoadState('networkidle'),
+          page
+            .locator('iframe[name="main-app-iframe"]')
+            .contentFrame()
+            .locator('iframe[name="legacy-frame"]')
+            .contentFrame()
+            .getByRole("button", { name: "Preview" })
+            .click(),
+        ]);
+
+        console.log(`Preview clicked for order: ${orderNo}`);
+
+        await page
+          .frameLocator('iframe[name="main-app-iframe"]')
+          .frameLocator('iframe[name="legacy-frame"]')
+          .getByText("Invoice draft saved.")
+          .waitFor({ state: "visible", timeout: 10000 });
+
+        // Wait for toast with exact text
+        // await page.waitForSelector("text=Invoice draft saved.", {
+        //   state: "visible",
+        //   timeout: 5000 * 2,
+        // });
+        // console.log(`1. Info: Invoice draft saved for order: ${orderNo}`);
+        // // (optional) Wait until it disappears if it's a temporary toast
+        // await page.waitForSelector("text=Invoice draft saved.", {
+        //   state: "detached",
+        //   timeout: 5000 * 2,
+        // });
+
+        // console.log(`2. Info: Invoice draft saved for order: ${orderNo}`);
+        console.log("Found toast message");
+
+        const errorList = page
+          .frameLocator('iframe[name="main-app-iframe"]')
+          .frameLocator('iframe[name="legacy-frame"]')
+          .locator("ul.messageContainer.error > li");
+
+        console.log("errors:", errorList);
+        if ((await errorList.count()) > 0) {
+          const errors = await errorList.allTextContents();
+
+          console.log("errors:", errors);
+          processedOrder.push({
+            orderNo: orderObj.orderNo,
+            message: `Order have not been successfully processd! Reason :${errors}`,
+            status: "invalid data",
+            timestamp: new Date().toISOString(),
+            errors: errors,
+            url: crtUrl,
+          });
+        } else {
+          console.log("✅ No error list found");
+          processedOrder.push({
+            orderNo: orderObj.orderNo,
+            message: "Order have been successfully processd!",
+            status: "processed",
+            timestamp: new Date().toISOString(),
+            url: crtUrl,
+          });
+          console.log("No errors");
+        }
+
+        await page.waitForTimeout(30000 / 2);
       } catch (error) {
         console.error(
-          `Error processing order ${order['Order no']}:`,
+          `Error processing order ${orderObj.orderNo}:`,
           error.message
         );
 
         processedOrder.push({
-          orderNo: order['Order no'],
-          message: 'Error while processing order',
-          status: 'error',
+          orderNo: orderObj.orderNo,
+          message:
+            "Error while processing order" + error.message ||
+            JSON.stringify(error),
+          status: "error",
           timestamp: new Date().toISOString(),
         });
 
@@ -614,23 +713,63 @@ async function main() {
           page.setDefaultNavigationTimeout(60000);
           await login(page);
         } catch (recoveryError) {
-          console.log('Recovery failed:', recoveryError.message);
-          console.log('Critical error - exiting script');
+          console.log("Recovery failed:", recoveryError.message);
+          console.log("Critical error - exiting script");
           await browser.close();
+          reSaveProcessedFile(processedOrder);
+          if (getPendingRows().length) await main();
           process.exit(1);
         }
       }
     }
 
-    console.log('Processing completed');
-    console.log('Browser will stay open. Press Ctrl+C to quit.');
+    console.log("Processing completed");
+    console.log("Browser will stay open. Press Ctrl+C to quit.");
   } catch (error) {
-    console.log('error: ', error);
+    console.log("error: ", error);
   } finally {
-    saveToCSV(CONFIG.processedOrderFile, processedOrder);
-    if (processedOrder.filter((p) => p.status === 'error').length) await main();
+    reSaveProcessedFile(processedOrder);
+    const pending = getPendingRows();
+    if (pending.length) await main();
   }
 
   await new Promise(() => {});
 }
 main();
+
+function reSaveProcessedFile(processedOrder) {
+  if (processedOrder.length == 0) return;
+  let records = [];
+  try {
+    const file = fs.readFileSync(CONFIG.processedOrderFile);
+    records = parse(file, {
+      columns: true, // converts to array of objects
+      skip_empty_lines: true,
+    }).map((o) => ({
+      orderNo: o.orderNo,
+      message: o.message,
+      status: o.status,
+      timestamp: o.timestamp,
+    }));
+  } catch (error) {
+    console.log("Error reading processed order file:", error);
+  }
+  saveToCSV(CONFIG.processedOrderFile, [...records, ...processedOrder]);
+}
+
+process.on("SIGINT", () => {
+  console.log("\nScript interrupted by user (SIGINT)");
+  reSaveProcessedFile(processedOrder);
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  console.log("\nScript interrupted by user (SIGTERM)");
+  reSaveProcessedFile(processedOrder);
+  process.exit(0);
+});
+
+process.on("exit", () => {
+  console.log("\nScript interrupted by user (exit)");
+  reSaveProcessedFile(processedOrder);
+  process.exit(0);
+});

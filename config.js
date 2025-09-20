@@ -1,6 +1,7 @@
 export const CONFIG = {
-  username: 'Nilkanth.sonar@smollan.com',
-  password: 'Welcome@123',
-  dataFile: './aux/data.csv',
-  processedOrderFile: './aux/processed_order.csv',
+  username: "Nilkanth.sonar@smollan.com",
+  password: "Welcome@123",
+  dataFile: "./aux/data2.csv",
+  pdfDir: "./aux/pdfs/",
+  processedOrderFile: "./aux/processed_order.csv",
 };
