@@ -5,6 +5,11 @@ import fs from "fs";
 import { parse } from "csv-parse/sync";
 import { CONFIG } from "./config.js";
 
+const PROCESS_TYPE = {
+  PROCESSED: "PROCESSED",
+  NOT_PROCESSED: "NOT_PROCESSED",
+};
+
 const processedOrder = [];
 
 async function login(page) {
@@ -126,19 +131,7 @@ const getObjFromRow = (row) => {
     choosenFile: `${choosenFile}.pdf`,
   };
 };
-const getObj = (order) => {
-  return {
-    orderNo: order.orderNo,
-    invoiceNo: order.invoiceNo,
-    invoiceDate: order.invoiceDate,
-    irnNo: order.irnNo,
-    businessArea: order.businessArea,
-    totalInvoiceBaseAmount: order.totalInvoiceBaseAmount,
-    hsnSac: order.hsnSac,
-    sac: order.sac,
-    choosenFile: order.choosenFile,
-  };
-};
+
 const isMissing = (row) => {
   return (
     !row.orderNo ||
@@ -192,7 +185,33 @@ const getCSVData = () => {
       missingFiles.forEach((file) => console.log(`- ${file}`));
       process.exit(1);
     }
+    const irns = validRows.map((p) => p["irnNo"]);
+    const uniqueIrns = [...new Set(irns)];
+    if (uniqueIrns.length != validRows.length) {
+      console.log(
+        `Error: ${validRows.length - uniqueIrns.length} duplicate irn(s) found`
+      );
+      console.log(
+        "Duplicate rows :",
+        validRows.filter((p) => p["irnNo"])
+      );
+      process.exit(1);
+    }
+    const uniqueRows = validRows.map((p) => p["orderNo"]);
+    const uniqueOrderNo = [...new Set(uniqueRows)];
 
+    if (uniqueOrderNo.length != validRows.length) {
+      console.log(
+        `Error: ${
+          validRows.length - uniqueOrderNo.length
+        } duplicate order(s) found`
+      );
+      console.log(
+        "Duplicate rows :",
+        validRows.filter((p) => p["orderNo"])
+      );
+      process.exit(1);
+    }
     return validRows;
   } catch (err) {
     console.error("Failed to fetch records", err);
@@ -291,87 +310,6 @@ async function applyFilter(page, orderNo) {
   await page.waitForTimeout(500);
   await searchBox.fill(orderNo);
 }
-async function applyFilter1(page, orderNo) {
-  // await page.waitForTimeout(500);
-  await page
-    .locator('iframe[name="main-app-iframe"]')
-    .contentFrame()
-    .getByRole("button", { name: ")Filter" })
-    .click();
-  console.time("Filter clicked");
-
-  await page.waitForTimeout(3000);
-
-  console.timeEnd("Filter clicked");
-  // Wait for document types button
-  // await iframe
-  //   .getByRole("button", { name: "Document Types" })
-  //   .waitFor({ state: "visible" });
-
-  await page
-    .locator('iframe[name="main-app-iframe"]')
-    .contentFrame()
-    .getByRole("button", { name: "Document Types" })
-    .click();
-  console.log("Document Types clicked");
-  await page.waitForTimeout(500);
-  await page
-    .locator('iframe[name="main-app-iframe"]')
-    .contentFrame()
-    .getByText("Unselect all")
-    .first()
-    .click();
-  console.log("Document Types: Unselect all clicked");
-  // await page.waitForTimeout(500);
-  await page
-    .locator('iframe[name="main-app-iframe"]')
-    .contentFrame()
-    .locator(".invoice.flex-none")
-    .check();
-  console.log("Document Types: Invoice checked");
-  // await page.waitForTimeout(500);
-  await page
-    .locator('iframe[name="main-app-iframe"]')
-    .contentFrame()
-    .locator(".order.flex-none")
-    .check();
-  console.log("Document Types: Order checked");
-  // await page.waitForTimeout(500);
-  await page
-    .locator('iframe[name="main-app-iframe"]')
-    .contentFrame()
-    .getByRole("button", { name: "Status" })
-    .first()
-    .click();
-  console.log("Status clicked");
-  // await page.waitForTimeout(500);
-  await page
-    .locator('iframe[name="main-app-iframe"]')
-    .contentFrame()
-    .locator("div")
-    .filter({ hasText: /^Unselect all$/ })
-    .nth(1)
-    .click();
-  console.log("Status: Unselect all clicked");
-  // await page.waitForTimeout(500);
-  await page
-    .locator('iframe[name="main-app-iframe"]')
-    .contentFrame()
-    .locator(".DELIVERED_RECEIVED.flex-none")
-    .check();
-  console.log("Status: DELIVERED_RECEIVED checked");
-  // await page.waitForTimeout(500);
-
-  // Clear the search field first, then fill with current order number
-  const searchBox = page
-    .locator('iframe[name="main-app-iframe"]')
-    .contentFrame()
-    .getByRole("textbox", { name: "Search" });
-
-  // await page.waitForTimeout(500);
-  await searchBox.fill(orderNo);
-  console.log(`Searching for order: ${orderNo}`);
-}
 
 const getPendingRows = () => {
   let processedOrders = [];
@@ -388,10 +326,15 @@ const getPendingRows = () => {
         message: o.message,
         status: o.status,
         timestamp: o.timestamp,
+        success: o.success,
+        url: o.url,
+        errors: o.errors,
       }))
-      .filter((r) => r.status === "processed");
+      .filter((r) => r.status === PROCESS_TYPE.PROCESSED)
+      .map((p) => p.orderNo);
+
     const allPendingRows = allRows.filter(
-      (row) => !processedOrders.find((r) => r.orderNo === row.orderNo)
+      (row) => !processedOrders.includes(row.orderNo)
     );
     return allPendingRows;
   } catch (error) {
@@ -431,7 +374,9 @@ async function main() {
       const orderObj = rows[orderIndex];
 
       const orderNo = orderObj.orderNo;
-
+      console.log(
+        "\n\n\n\n\n\n\n\n\n\n\n========================================================================"
+      );
       console.log(`Processing order: ${orderNo}`);
       // Close previous tab if it exists
       // if (previousPage) {
@@ -465,8 +410,9 @@ async function main() {
           console.log(`${orderNo}: Order not found in search results`);
           processedOrder.push({
             orderNo: orderNo,
-            message: "Order not found on the portal with this id!",
-            status: "skipped",
+            message: "Order not found on the platform with this id!",
+            status: PROCESS_TYPE.PROCESSED,
+            success: false,
             timestamp: new Date().toISOString(),
           });
           continue;
@@ -482,8 +428,9 @@ async function main() {
           console.log(`Order ${orderNo} status is not "RECEIVED"`);
           processedOrder.push({
             orderNo: orderNo,
-            message: `Order found with status ${tdText.trim()}!`,
-            status: "skipped",
+            message: `Order found with status ${tdText.trim()}, but not RECEIVED!`,
+            status: PROCESS_TYPE.PROCESSED,
+            success: false,
             timestamp: new Date().toISOString(),
           });
           continue;
@@ -518,16 +465,18 @@ async function main() {
         inputValue = parseFloat(inputValue.replace(/,/g, ""));
         const crtUrl = page.url();
         console.log("crtUrl: ", crtUrl);
+
         if (inputValue < orderObj.totalInvoiceBaseAmount) {
           // wait for 15 sec
-          await page.waitForTimeout(15000);
           console.log(
             `order no: ${orderNo} amount on platform is: ${inputValue}, which is less than total invoice base amount found in the sheet: ${orderObj.totalInvoiceBaseAmount}`
           );
+          await page.waitForTimeout(15000);
           processedOrder.push({
             orderNo: orderNo,
             message: `order no: ${orderNo} amount on platform is: ${inputValue}, which is less than total invoice base amount found in the sheet: ${orderObj.totalInvoiceBaseAmount}`,
-            status: "skipped",
+            status: PROCESS_TYPE.PROCESSED,
+            success: false,
             timestamp: new Date().toISOString(),
             url: crtUrl,
           });
@@ -564,15 +513,6 @@ async function main() {
           .getByRole("textbox", { name: "IRN (Invoice Reference Number)" })
           .fill(orderObj.irnNo);
         console.log(`IRN filled for order: ${orderNo}`);
-
-        // if (orderIndex == 0)
-        //   await page
-        //     .locator('iframe[name="main-app-iframe"]')
-        //     .contentFrame()
-        //     .locator('iframe[name="legacy-frame"]')
-        //     .contentFrame()
-        //     .getByText(/^Next number:/) // regex, beginning of string
-        //     .click();
 
         await page
           .locator('iframe[name="main-app-iframe"]')
@@ -640,20 +580,8 @@ async function main() {
           .frameLocator('iframe[name="legacy-frame"]')
           .getByText("Invoice draft saved.")
           .waitFor({ state: "visible", timeout: 10000 });
-
-        // Wait for toast with exact text
-        // await page.waitForSelector("text=Invoice draft saved.", {
-        //   state: "visible",
-        //   timeout: 5000 * 2,
-        // });
-        // console.log(`1. Info: Invoice draft saved for order: ${orderNo}`);
-        // // (optional) Wait until it disappears if it's a temporary toast
-        // await page.waitForSelector("text=Invoice draft saved.", {
-        //   state: "detached",
-        //   timeout: 5000 * 2,
-        // });
-
-        // console.log(`2. Info: Invoice draft saved for order: ${orderNo}`);
+        console.log("):-waited for 5s");
+        await page.waitForTimeout(5000);
         console.log("Found toast message");
 
         const errorList = page
@@ -664,12 +592,13 @@ async function main() {
         console.log("errors:", errorList);
         if ((await errorList.count()) > 0) {
           const errors = await errorList.allTextContents();
-
+          console.log("crtUrl: ", crtUrl);
           console.log("errors:", errors);
           processedOrder.push({
             orderNo: orderObj.orderNo,
             message: `Order have not been successfully processd! Reason :${errors}`,
-            status: "invalid data",
+            status: PROCESS_TYPE.PROCESSED,
+            success: false,
             timestamp: new Date().toISOString(),
             errors: errors,
             url: crtUrl,
@@ -679,7 +608,8 @@ async function main() {
           processedOrder.push({
             orderNo: orderObj.orderNo,
             message: "Order have been successfully processd!",
-            status: "processed",
+            status: PROCESS_TYPE.PROCESSED,
+            success: true,
             timestamp: new Date().toISOString(),
             url: crtUrl,
           });
@@ -698,7 +628,8 @@ async function main() {
           message:
             "Error while processing order" + error.message ||
             JSON.stringify(error),
-          status: "error",
+          status: PROCESS_TYPE.NOT_PROCESSED,
+          success: false,
           timestamp: new Date().toISOString(),
         });
 
@@ -731,6 +662,7 @@ async function main() {
     reSaveProcessedFile(processedOrder);
     const pending = getPendingRows();
     if (pending.length) await main();
+    browser.close();
   }
 
   await new Promise(() => {});
@@ -751,10 +683,20 @@ function reSaveProcessedFile(processedOrder) {
       status: o.status,
       timestamp: o.timestamp,
     }));
-  } catch (error) {
-    console.log("Error reading processed order file:", error);
-  }
-  saveToCSV(CONFIG.processedOrderFile, [...records, ...processedOrder]);
+  } catch (error) {}
+
+  saveToCSV(
+    CONFIG.processedOrderFile,
+    [...records, ...processedOrder].map((o) => ({
+      orderNo: o.orderNo,
+      status: o.status,
+      success: o.success,
+      url: o.url,
+      timestamp: o.timestamp,
+      errors: o.errors,
+      message: o.message,
+    }))
+  );
 }
 
 process.on("SIGINT", () => {

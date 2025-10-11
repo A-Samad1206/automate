@@ -1,0 +1,28 @@
+"orderNo","status","success","url","timestamp","errors","message"
+"PO16847361","PROCESSED",,,"2025-09-20T13:53:08.431Z",,"Order have not been successfully processd! Reason :Invoice is not valid for dispatch,This document number has already been used. Please choose a different document number"
+"PO16903346","PROCESSED",,,"2025-09-20T13:53:51.124Z",,"Order have not been successfully processd! Reason :This document number has already been used. Please choose a different document number"
+"PO16903361","PROCESSED",,,"2025-09-20T13:54:23.172Z",,"Order not found on the platform with this id!"
+"PO16911912","NOT_PROCESSED",,,"2025-09-20T13:56:25.316Z",,"Error while processing orderlocator.click: Timeout 120000ms exceeded.
+Call log:
+[2m  - waiting for locator('iframe[name=""main-app-iframe""]').contentFrame().getByRole('button', { name: 'Document Types' })[22m
+"
+"PO16911913","PROCESSED",,,"2025-09-20T13:59:13.941Z",,"Order have not been successfully processd! Reason :Invoice is not valid for dispatch,This document number has already been used. Please choose a different document number"
+"PO16847361","PROCESSED",,,"2025-09-20T13:53:08.431Z",,"Order have not been successfully processd! Reason :Invoice is not valid for dispatch,This document number has already been used. Please choose a different document number"
+"PO16903346","PROCESSED",,,"2025-09-20T13:53:51.124Z",,"Order have not been successfully processd! Reason :This document number has already been used. Please choose a different document number"
+"PO16903361","PROCESSED",,,"2025-09-20T13:54:23.172Z",,"Order not found on the platform with this id!"
+"PO16911912","NOT_PROCESSED",,,"2025-09-20T13:56:25.316Z",,"Error while processing orderlocator.click: Timeout 120000ms exceeded.
+Call log:
+[2m  - waiting for locator('iframe[name=""main-app-iframe""]').contentFrame().getByRole('button', { name: 'Document Types' })[22m
+"
+"PO16911913","PROCESSED",,,"2025-09-20T13:59:13.941Z",,"Order have not been successfully processd! Reason :Invoice is not valid for dispatch,This document number has already been used. Please choose a different document number"
+"PO16847361","PROCESSED",,,"2025-09-20T13:53:08.431Z",,"Order have not been successfully processd! Reason :Invoice is not valid for dispatch,This document number has already been used. Please choose a different document number"
+"PO16903346","PROCESSED",,,"2025-09-20T13:53:51.124Z",,"Order have not been successfully processd! Reason :This document number has already been used. Please choose a different document number"
+"PO16903361","PROCESSED",,,"2025-09-20T13:54:23.172Z",,"Order not found on the platform with this id!"
+"PO16911912","NOT_PROCESSED",,,"2025-09-20T13:56:25.316Z",,"Error while processing orderlocator.click: Timeout 120000ms exceeded.
+Call log:
+[2m  - waiting for locator('iframe[name=""main-app-iframe""]').contentFrame().getByRole('button', { name: 'Document Types' })[22m
+"
+"PO16911913","PROCESSED",,,"2025-09-20T13:59:13.941Z",,"Order have not been successfully processd! Reason :Invoice is not valid for dispatch,This document number has already been used. Please choose a different document number"
+"PO16911912","PROCESSED",,,"2025-09-20T14:05:34.445Z",,"Order have not been successfully processd! Reason :Invoice is not valid for dispatch,This document number has already been used. Please choose a different document number"
+"PO16911912","PROCESSED",,,"2025-09-20T14:05:34.445Z",,"Order have not been successfully processd! Reason :Invoice is not valid for dispatch,This document number has already been used. Please choose a different document number"
+"PO16911912","PROCESSED",false,"https://go.tradeshift.com/#/Tradeshift.InvoiceLG/create?execution=e1s1&orderId=cdc7d4bf-9365-5ba7-ac60-c132ab2fb1e9&companyAccountId=98b5f5f6-6cdb-4c88-8788-10b438bb3d0c","2025-09-20T14:05:34.445Z","[""Invoice is not valid for dispatch"",""This document number has already been used. Please choose a different document number""]","Order have not been successfully processd! Reason :Invoice is not valid for dispatch,This document number has already been used. Please choose a different document number"
