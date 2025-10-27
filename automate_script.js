@@ -225,6 +225,7 @@ function saveToCSV(filename, jsonArray) {
   const csv = parser.parse(jsonArray);
   fs.writeFileSync(filename, csv, "utf8");
 }
+
 async function applyFilter(page, orderNo) {
   await page
     .locator('iframe[name="main-app-iframe"]')
@@ -349,7 +350,7 @@ async function main() {
     console.error(
       "No data found. Make sure the sheet is shared with the service account email."
     );
-    process.exit(1);
+    return { status: "error", message: "No data found" };
   }
 
   try {
@@ -369,7 +370,6 @@ async function main() {
 
     await login(page);
     // let previousPage = null;
-
     for (const orderIndex in rows) {
       const orderObj = rows[orderIndex];
 
