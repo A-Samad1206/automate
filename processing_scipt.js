@@ -54,6 +54,8 @@ export const processing_script = async (
       };
     }
 
+    await page.waitForTimeout(10000);
+
     // login - end
     for (const orderIndex in pendingRows) {
       const order = pendingRows[orderIndex];
@@ -135,12 +137,12 @@ export const processing_script = async (
         console.log(`Input value for order: ${inputValue}`);
         inputValue = parseFloat(inputValue.replace(/,/g, ""));
 
-        if (orderIndex != 0 && inputValue < order.totalInvoiceBaseAmount) {
+        if (inputValue < order.totalInvoiceBaseAmount) {
           // wait for 15 sec
           console.log(
             `order no: ${order.orderNo} amount on platform is: ${inputValue}, which is less than total invoice base amount found in the sheet: ${order.totalInvoiceBaseAmount}`
           );
-          await page.waitForTimeout(15000);
+          // await page.waitForTimeout(15000);
           await writeOrAppendXLSX(processedFilePath, [
             {
               orderNo: order.orderNo,
@@ -291,7 +293,7 @@ export const processing_script = async (
           console.log("No errors");
         }
 
-        await page.waitForTimeout(30000 / 2);
+        await page.waitForTimeout(10000);
       } catch (error) {
         console.error(
           "Error from processing_script's for loop catch block. \n\n" + error
