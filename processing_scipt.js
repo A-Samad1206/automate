@@ -5,11 +5,26 @@ import path from "path";
 
 export const processing_script = async (
   rows,
-  { subDir, processedFilePath, username, password }
+  { subDir, processedFilePath, username, password },
+  _browser,
+  _hasBeenClosed
 ) => {
+  if (_hasBeenClosed) {
+    if (_browser) {
+      await _browser.close();
+    }
+    console.log("Browser was closed, stopping processing");
+    return {
+      status: "stopped",
+      message: "Browser was closed by user",
+    };
+  }
   const pendingRows = getPendingRows(rows, path.join(processedFilePath));
 
   if (pendingRows.length === 0) {
+    if (_browser) {
+      await _browser.close();
+    }
     console.info(":- No pending rows found");
 
     return {
@@ -17,12 +32,23 @@ export const processing_script = async (
       status: "success",
     };
   }
-
-  const browser = await chromium.launch({
-    headless: false,
-    args: ["--start-maximized", "--start-fullscreen"],
+  let hasBeenClosed = false;
+  const browser = _browser
+    ? _browser
+    : await chromium.launch({
+        headless: false,
+        args: ["--start-maximized", "--start-fullscreen"],
+      });
+  browser.on("disconnected", () => {
+    console.log("Browser was closed (X button or Alt+F4).");
+    hasBeenClosed = true;
+  });
+  browser.on("close", () => {
+    console.log("Browser was closed (X button or Alt+F4).");
+    hasBeenClosed = true;
   });
 
+  // Check if browser is still connected before processing each order
   try {
     const context = await browser.newContext({
       viewport: null, // Use full screen viewport
@@ -31,6 +57,26 @@ export const processing_script = async (
     page.setDefaultTimeout(120 * 1000);
     page.setDefaultNavigationTimeout(120 * 1000);
     console.info("):- Launched browser");
+    // Manual disconnect detection (fallback)
+    // const checkClosed = setInterval(async () => {
+    //   try {
+    //     // will throw if disconnected
+    //     const version = await browser.version();
+    //     console.log("version :", version);
+    //     // const paeTitle = await page.title();
+    //     const isClosed = await page.isClosed();
+    //     // console.log("page title :", paeTitle);
+    //     console.log("isClosed :", isClosed);
+    //     const browserClose = browser.isClosed;
+    //     console.log("browserClose :", browserClose);
+    //   } catch (e) {
+    //     console.log("typeof e :", typeof e);
+    //     console.error("Error while checking browser status \n\n" + e);
+    //     console.log("Browser closed (detected manually).");
+    //     hasBeenClosed = true;
+    //     clearInterval(checkClosed);
+    //   }
+    // }, 2000);
     try {
       // login - start
       await page.goto("https://go.tradeshift.com");
@@ -47,6 +93,7 @@ export const processing_script = async (
       await page.waitForLoadState("networkidle");
       console.info("):- Logged in successfully");
     } catch (error) {
+      console.log("typeof error :", typeof error);
       console.error("Error while loging in \n\n" + error);
       return {
         status: false,
@@ -58,6 +105,17 @@ export const processing_script = async (
 
     // login - end
     for (const orderIndex in pendingRows) {
+      // Check if browser is still connected before processing each order
+      if (hasBeenClosed) {
+        console.log("Browser was closed, stopping processing");
+        return {
+          status: "stopped",
+          message: "Browser was closed by user",
+          processed: orderIndex,
+          total: pendingRows.length,
+        };
+      }
+
       const order = pendingRows[orderIndex];
       try {
         console.info("\n\n\n\n\n=============================================");
@@ -300,6 +358,7 @@ export const processing_script = async (
 
         await page.waitForTimeout(10000);
       } catch (error) {
+        console.log("typeof error :", typeof error);
         console.error(
           "Error from processing_script's for loop catch block. \n\n" + error
         );
@@ -317,192 +376,201 @@ export const processing_script = async (
       }
     }
   } catch (error) {
+    console.log("typeof error :", typeof error);
     console.error("Error from processing_script's catch block. \n\n" + error);
   } finally {
-    await browser.close();
-    await processing_script(pendingRows, {
-      subDir,
-      processedFilePath,
-      username,
-      password,
-    });
-  }
-};
-
-async function navigateToDocumentManager(page) {
-  let navigationSuccess = false;
-  let retries = 3;
-
-  while (retries > 0 && !navigationSuccess) {
-    try {
-      console.info(`Navigating to Document Manager (attempt ${4 - retries}/3)`);
-
-      // Use domcontentloaded instead of networkidle for faster navigation
-      await page.goto(
-        "https://go.tradeshift.com/#/Tradeshift.DocumentManager",
+    if (!hasBeenClosed) {
+      await processing_script(
+        pendingRows,
         {
-          waitUntil: "domcontentloaded",
-          timeout: 30000,
-        }
+          subDir,
+          processedFilePath,
+          username,
+          password,
+        },
+        browser,
+        hasBeenClosed
       );
+    }
+  }
 
-      // Wait for critical elements to ensure page is loaded
-      await page.waitForSelector('iframe[name="main-app-iframe"]', {
-        timeout: 20000,
-      });
+  async function navigateToDocumentManager(page) {
+    let navigationSuccess = false;
+    let retries = 3;
 
-      // Use contentFrame() method for more reliable frame access
-      const mainFrame = page
-        .locator('iframe[name="main-app-iframe"]')
-        .contentFrame();
+    while (retries > 0 && !navigationSuccess) {
+      try {
+        console.info(
+          `Navigating to Document Manager (attempt ${4 - retries}/3)`
+        );
 
-      // Wait for the filter button specifically as it indicates the page is ready
-      await mainFrame.getByRole("button", { name: ")Filter" }).waitFor({
-        state: "visible",
-        timeout: 20000,
-      });
-
-      // Additional check to ensure the search functionality is available
-      await mainFrame.getByRole("textbox", { name: "Search" }).waitFor({
-        state: "visible",
-        timeout: 15000,
-      });
-
-      navigationSuccess = true;
-      console.info("Navigation to Document Manager successful");
-    } catch (navError) {
-      console.error(`Navigation failed: ${navError.message}`);
-      retries--;
-      if (retries === 0) {
-        console.info("All navigation attempts failed, trying page reload...");
-        try {
-          await page.reload({
+        // Use domcontentloaded instead of networkidle for faster navigation
+        await page.goto(
+          "https://go.tradeshift.com/#/Tradeshift.DocumentManager",
+          {
             waitUntil: "domcontentloaded",
-            timeout: 60000,
-          });
-          await page.waitForTimeout(2000);
-          // Try one more time after reload
-          await page.goto(
-            "https://go.tradeshift.com/#/Tradeshift.DocumentManager",
-            {
+            timeout: 30000,
+          }
+        );
+
+        // Wait for critical elements to ensure page is loaded
+        await page.waitForSelector('iframe[name="main-app-iframe"]', {
+          timeout: 20000,
+        });
+
+        // Use contentFrame() method for more reliable frame access
+        const mainFrame = page
+          .locator('iframe[name="main-app-iframe"]')
+          .contentFrame();
+
+        // Wait for the filter button specifically as it indicates the page is ready
+        await mainFrame.getByRole("button", { name: ")Filter" }).waitFor({
+          state: "visible",
+          timeout: 20000,
+        });
+
+        // Additional check to ensure the search functionality is available
+        await mainFrame.getByRole("textbox", { name: "Search" }).waitFor({
+          state: "visible",
+          timeout: 15000,
+        });
+
+        navigationSuccess = true;
+        console.info("Navigation to Document Manager successful");
+      } catch (navError) {
+        console.error(`Navigation failed: ${navError.message}`);
+        retries--;
+        if (retries === 0) {
+          console.info("All navigation attempts failed, trying page reload...");
+          try {
+            await page.reload({
               waitUntil: "domcontentloaded",
               timeout: 60000,
-            }
-          );
-          await page.waitForSelector('iframe[name="main-app-iframe"]', {
-            timeout: 20000,
-          });
-          navigationSuccess = true;
-          console.info("Navigation successful after reload");
-        } catch (reloadError) {
-          console.error(
-            `Failed to navigate to Document Manager: ${reloadError.message}`
-          );
-          throw new Error(
-            `Failed to navigate to Document Manager: ${reloadError.message}`
-          );
+            });
+            await page.waitForTimeout(2000);
+            // Try one more time after reload
+            await page.goto(
+              "https://go.tradeshift.com/#/Tradeshift.DocumentManager",
+              {
+                waitUntil: "domcontentloaded",
+                timeout: 60000,
+              }
+            );
+            await page.waitForSelector('iframe[name="main-app-iframe"]', {
+              timeout: 20000,
+            });
+            navigationSuccess = true;
+            console.info("Navigation successful after reload");
+          } catch (reloadError) {
+            console.error(
+              `Failed to navigate to Document Manager: ${reloadError.message}`
+            );
+            throw new Error(
+              `Failed to navigate to Document Manager: ${reloadError.message}`
+            );
+          }
+        } else {
+          await page.waitForTimeout(2000);
         }
-      } else {
-        await page.waitForTimeout(2000);
       }
     }
   }
-}
 
-async function applyFilter(page, orderNo) {
-  try {
-    await page
-      .locator('iframe[name="main-app-iframe"]')
-      .contentFrame()
-      .locator("div")
-      .filter({ hasText: /^Filter$/ })
-      .click();
-    await page.waitForTimeout(1000);
-    await page
-      .locator('iframe[name="main-app-iframe"]')
-      .contentFrame()
-      .getByRole("button", { name: ")Filter" })
-      .click();
-    await page.waitForTimeout(1000);
-    await page
-      .locator('iframe[name="main-app-iframe"]')
-      .contentFrame()
-      .getByRole("button", { name: "Document Types" })
-      .click();
-    await page.waitForTimeout(1000);
-    await page
-      .locator('iframe[name="main-app-iframe"]')
-      .contentFrame()
-      .locator(".invoice.flex-none")
-      .check();
-    await page.waitForTimeout(1000);
-    await page
-      .locator('iframe[name="main-app-iframe"]')
-      .contentFrame()
-      .getByText("Unselect all")
-      .first()
-      .click();
-    await page.waitForTimeout(1000);
-    await page
-      .locator('iframe[name="main-app-iframe"]')
-      .contentFrame()
-      .locator(".invoice.flex-none")
-      .check();
-    await page.waitForTimeout(1000);
-    await page
-      .locator('iframe[name="main-app-iframe"]')
-      .contentFrame()
-      .locator(".order.flex-none")
-      .check();
-    await page.waitForTimeout(1000);
-    await page
-      .locator('iframe[name="main-app-iframe"]')
-      .contentFrame()
-      .getByRole("button", { name: "Status" })
-      .first()
-      .click();
-    await page.waitForTimeout(1000);
-    await page
-      .locator('iframe[name="main-app-iframe"]')
-      .contentFrame()
-      .locator("div")
-      .filter({ hasText: /^Unselect all$/ })
-      .nth(1)
-      .click();
-    await page
-      .locator('iframe[name="main-app-iframe"]')
-      .contentFrame()
-      .getByText("Unselect all")
-      .nth(1)
-      .click();
-    await page.waitForTimeout(1000);
-    await page
-      .locator('iframe[name="main-app-iframe"]')
-      .contentFrame()
-      .locator(".DELIVERED_RECEIVED.flex-none")
-      .check();
-    await page.waitForTimeout(1000);
+  async function applyFilter(page, orderNo) {
+    try {
+      await page
+        .locator('iframe[name="main-app-iframe"]')
+        .contentFrame()
+        .locator("div")
+        .filter({ hasText: /^Filter$/ })
+        .click();
+      await page.waitForTimeout(1000);
+      await page
+        .locator('iframe[name="main-app-iframe"]')
+        .contentFrame()
+        .getByRole("button", { name: ")Filter" })
+        .click();
+      await page.waitForTimeout(1000);
+      await page
+        .locator('iframe[name="main-app-iframe"]')
+        .contentFrame()
+        .getByRole("button", { name: "Document Types" })
+        .click();
+      await page.waitForTimeout(1000);
+      await page
+        .locator('iframe[name="main-app-iframe"]')
+        .contentFrame()
+        .locator(".invoice.flex-none")
+        .check();
+      await page.waitForTimeout(1000);
+      await page
+        .locator('iframe[name="main-app-iframe"]')
+        .contentFrame()
+        .getByText("Unselect all")
+        .first()
+        .click();
+      await page.waitForTimeout(1000);
+      await page
+        .locator('iframe[name="main-app-iframe"]')
+        .contentFrame()
+        .locator(".invoice.flex-none")
+        .check();
+      await page.waitForTimeout(1000);
+      await page
+        .locator('iframe[name="main-app-iframe"]')
+        .contentFrame()
+        .locator(".order.flex-none")
+        .check();
+      await page.waitForTimeout(1000);
+      await page
+        .locator('iframe[name="main-app-iframe"]')
+        .contentFrame()
+        .getByRole("button", { name: "Status" })
+        .first()
+        .click();
+      await page.waitForTimeout(1000);
+      await page
+        .locator('iframe[name="main-app-iframe"]')
+        .contentFrame()
+        .locator("div")
+        .filter({ hasText: /^Unselect all$/ })
+        .nth(1)
+        .click();
+      await page
+        .locator('iframe[name="main-app-iframe"]')
+        .contentFrame()
+        .getByText("Unselect all")
+        .nth(1)
+        .click();
+      await page.waitForTimeout(1000);
+      await page
+        .locator('iframe[name="main-app-iframe"]')
+        .contentFrame()
+        .locator(".DELIVERED_RECEIVED.flex-none")
+        .check();
+      await page.waitForTimeout(1000);
 
-    // Clear the search field first, then fill with current order number
-    const searchBox = page
-      .locator('iframe[name="main-app-iframe"]')
-      .contentFrame()
-      .getByRole("textbox", { name: "Search" });
+      // Clear the search field first, then fill with current order number
+      const searchBox = page
+        .locator('iframe[name="main-app-iframe"]')
+        .contentFrame()
+        .getByRole("textbox", { name: "Search" });
 
-    await searchBox.click();
-    await searchBox.selectText();
-    await searchBox.press("Delete");
-    await page.waitForTimeout(500);
-    await searchBox.fill(orderNo);
-    console.info("Applied filters, needs to wait");
-    await page.waitForTimeout(5000);
-    console.info(`Waited for 5 seconds for filter to apply`);
-    if (!page.frame({ name: "main-app-iframe" })) {
-      throw new Error("Main iframe not found");
+      await searchBox.click();
+      await searchBox.selectText();
+      await searchBox.press("Delete");
+      await page.waitForTimeout(500);
+      await searchBox.fill(orderNo);
+      console.info("Applied filters, needs to wait");
+      await page.waitForTimeout(5000);
+      console.info(`Waited for 5 seconds for filter to apply`);
+      if (!page.frame({ name: "main-app-iframe" })) {
+        throw new Error("Main iframe not found");
+      }
+      console.info("Applied filters successfully.");
+    } catch (error) {
+      console.error("):- error from applyFilters catch block: \n\n\n\n", error);
+      throw error;
     }
-    console.info("Applied filters successfully.");
-  } catch (error) {
-    console.error("):- error from applyFilters catch block: \n\n\n\n", error);
-    throw error;
   }
-}
+};
