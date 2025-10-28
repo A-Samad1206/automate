@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import XLSX from "xlsx";
 
 import expressFileUpload from "express-fileupload";
 
@@ -442,4 +441,5 @@ app.put("/api/change-global-config", express.json(), async (req, res) => {
     res.status(500).send("Error reading history");
   }
 });
+
 app.listen(5555, () => console.log("Server running on port 5555"));

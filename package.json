@@ -1,9 +1,9 @@
 {
-  "name": "automate",
+  "name": "final",
   "version": "1.0.0",
   "description": "",
-  "type": "module",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -12,11 +12,9 @@
   "license": "ISC",
   "packageManager": "pnpm@10.14.0",
   "dependencies": {
-    "@playwright/test": "^1.55.0",
-    "csv-parse": "^6.1.0",
     "express": "^5.1.0",
-    "googleapis": "^156.0.0",
-    "json2csv": "6.0.0-alpha.2",
-    "playwright": "^1.55.0"
+    "express-fileupload": "^1.5.2",
+    "read-excel-file": "^6.0.1",
+    "xlsx": "^0.18.5"
   }
 }
