@@ -61,7 +61,12 @@ export const processing_script = async (
       const order = pendingRows[orderIndex];
       try {
         console.info("\n\n\n\n\n=============================================");
-        console.info(":- Processing order: ", order.orderNo);
+        console.info(
+          ":- Processing order: ",
+          order.orderNo,
+          "index: ",
+          orderIndex
+        );
 
         await navigateToDocumentManager(page);
 
@@ -255,9 +260,9 @@ export const processing_script = async (
           .frameLocator('iframe[name="legacy-frame"]')
           .getByText("Invoice draft saved.")
           .waitFor({ state: "visible", timeout: 10000 });
-        console.log("):-waited for 5s");
+        console.log("):-waiting for 5s");
         await page.waitForTimeout(5000);
-        console.log("Found toast message");
+        console.log("):-waited for 5s");
 
         const errorList = page
           .frameLocator('iframe[name="main-app-iframe"]')

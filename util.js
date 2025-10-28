@@ -42,9 +42,9 @@ export const getObjFromRow = (
       ? parseFloat(row["Total Invoice Base Amount"].split(",").join(""))
       : row["Total Invoice Base Amount"];
 
-  const businessArea = row["Business Area"] || _businessArea;
-  const hsnSac = row["HSN/SAC"] || _hsnSac;
-  const sac = row["SAC"] || _sac;
+  const businessArea = _businessArea;
+  const hsnSac = _hsnSac;
+  const sac = _sac;
 
   const choosenFile = row["HFS Invoice No"];
 

@@ -172,6 +172,9 @@ app.post("/fill_orders", async (req, res) => {
     }
     const logs = [];
     try {
+      console.log(
+        `:- :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::Processing orders for ${dirName}:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::`
+      );
       processing_script(validRows, {
         subDir,
         processedFilePath: path.join(subDir, globalConfig.processedFile),
@@ -332,6 +335,10 @@ app.post("/fill_unprocessed/:folder", async (req, res) => {
           .filter((p) => p.status == PROCESS_TYPE.NOT_PROCESSED).length > 0
     );
     try {
+      console.log(
+        `:- :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::Processing (unprocessed) orders for ${folder}:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::`
+      );
+
       processing_script(unprocessed, {
         subDir: path.join(rootDir, globalConfig.dataDir, folder),
         processedFilePath: path.join(
