@@ -79,7 +79,7 @@ export const readXLSXFile = (filePath) => {
   try {
     const workbook = XLSX.readFile(filePath, {
       cellText: false,
-      cellDates: false,
+      cellDates: true,
       rawNumbers: false,
     });
     const sheetName = workbook.SheetNames[0];

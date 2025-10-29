@@ -449,4 +449,12 @@ app.put("/api/change-global-config", express.json(), async (req, res) => {
   }
 });
 
-app.listen(5555, () => console.log("Server running on port 5555"));
+app.listen(5555, () => {
+  try {
+    // check if __data exist or not at roor, else create
+    if (!fs.existsSync(path.join(rootDir, "__data"))) {
+      fs.mkdirSync(path.join(rootDir, "__data"));
+    }
+  } catch (error) {}
+  console.log("Server running on port 5555");
+});
