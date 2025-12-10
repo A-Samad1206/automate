@@ -35,23 +35,28 @@ export const getObjFromRow = (
 ) => {
   const orderNo = row["Order no"];
   const invoiceNo = row["HFS Invoice No"];
-  const invoiceDate = row["HFS Invoice Date"];
+  // const invoiceDate = row["HFS Invoice Date"];
   const irnNo = row["IRN NO"];
   const totalInvoiceBaseAmount =
     typeof row["Total Invoice Base Amount"] === "string"
       ? parseFloat(row["Total Invoice Base Amount"].split(",").join(""))
       : row["Total Invoice Base Amount"];
-
+  // console.log("invoiceDate:", invoiceDate);
+  // const spliited = invoiceDate.split("/");
+  // console.log("spliited:", spliited);
   const businessArea = _businessArea;
   const hsnSac = _hsnSac;
   const sac = _sac;
 
   const choosenFile = row["HFS Invoice No"];
+  const day = row['Day'];
+  const month = row['Month']
+  const year = row['Year']
 
   return {
     orderNo,
     invoiceNo,
-    invoiceDate,
+    invoiceDate: [month,day,year].join("/"),
     irnNo,
     businessArea,
     totalInvoiceBaseAmount,

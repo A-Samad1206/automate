@@ -12,6 +12,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.14.0",
   "dependencies": {
+    "csv-parse": "^6.1.0",
     "express": "^5.1.0",
     "express-fileupload": "^1.5.2",
     "playwright": "^1.56.1",

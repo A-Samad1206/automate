@@ -160,21 +160,64 @@ app.post("/fill_orders", async (req, res) => {
       );
     }
 
-    const uniqueRowsByOrderNo = validRows.map((p) => p["orderNo"]);
-    const uniqueOrderNo = [...new Set(uniqueRowsByOrderNo)];
+    // const uniqueRowsByOrderNo = validRows.map((p) => p["orderNo"]);
+    // const uniqueOrderNo = [...new Set(uniqueRowsByOrderNo)];
 
-    if (uniqueOrderNo.length != validRows.length) {
-      throw new Error(
-        `Error: ${
-          validRows.length - uniqueOrderNo.length
-        } duplicate order(s) found`
-      );
-    }
+    // if (uniqueOrderNo.length != validRows.length) {
+    //   throw new Error(
+    //     `Error: ${
+    //       validRows.length - uniqueOrderNo.length
+    //     } duplicate order(s) found`
+    //   );
+    // }
     const logs = [];
     try {
       console.log(
         `:- :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::Processing orders for ${dirName}:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::`
       );
+      console.log("validRows: ", validRows);
+      // const cleanedData = validRows.map((item) => {
+      //   let invoiceDate = item.invoiceDate;
+
+      //   // Remove first character if it's a slash
+      //   if (invoiceDate.startsWith("/")) {
+      //     invoiceDate = invoiceDate.substring(1);
+      //   }
+
+      //   // Remove last character if it's a slash
+      //   if (invoiceDate.endsWith("/")) {
+      //     invoiceDate = invoiceDate.substring(0, invoiceDate.length - 1);
+      //   }
+
+      //   return {
+      //     ...item,
+      //     invoiceDate: invoiceDate,
+      //   };
+      // });
+      // console.log("cleanData: ", cleanedData);
+      // const result = Array.from(
+      //   { length: Math.ceil(cleanedData.length / 10) },
+      //   (_, i) => cleanedData.slice(i * 10, i * 10 + 10)
+      // );
+      // console.log("result: ", result);
+      // async function processWithDelay() {
+      //   for (let i = 0; i < result.length; i++) {
+      //     await new Promise((resolve) =>
+      //       setTimeout(resolve, i === 0 ? 0 : 10000)
+      //     ); // 10 second delay
+
+      //     processing_script(result[i], {
+      //       subDir,
+      //       processedFilePath: path.join(subDir, globalConfig.processedFile),
+      //       username: globalConfig.username,
+      //       password: globalConfig.password,
+      //       logs,
+      //     });
+      //   }
+      // }
+
+      // processWithDelay();
+
       processing_script(validRows, {
         subDir,
         processedFilePath: path.join(subDir, globalConfig.processedFile),
@@ -458,3 +501,21 @@ app.listen(5555, () => {
   } catch (error) {}
   console.log("Server running on port 5555");
 });
+
+// (async  () => {
+//   try {
+//     const filePath = `/home/samad/Documents/tse/automate/__data/2025_12_10_12_52_50/excel.xlsx`
+//     const fileData = readXLSXFile(filePath);
+//     const orderRows = fileData.map((excelRow) =>
+//       getObjFromRow(excelRow, {
+//         businessArea: globalConfig.businessArea,
+//         hsnSac: globalConfig.hsnSac,
+//         sac: globalConfig.sac,
+//       })
+//     );
+//     console.log("orderRows: ", orderRows);
+
+//   } catch (error) {
+    
+//   }
+// })();

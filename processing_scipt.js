@@ -19,8 +19,8 @@ export const processing_script = async (
       message: "Browser was closed by user",
     };
   }
-  const pendingRows = getPendingRows(rows, path.join(processedFilePath));
-
+  const pendingRows = getPendingRows(rows, processedFilePath);
+  console.log("pendingRows: ", pendingRows);
   if (pendingRows.length === 0) {
     if (_browser) {
       await _browser.close();
@@ -102,7 +102,7 @@ export const processing_script = async (
     }
 
     await page.waitForTimeout(10000);
-
+    let isFilterCleared = false;
     // login - end
     for (const orderIndex in pendingRows) {
       // Check if browser is still connected before processing each order
@@ -117,26 +117,64 @@ export const processing_script = async (
       }
 
       const order = pendingRows[orderIndex];
+      const dateStr = order.invoiceDate;
+      const formatted = dateStr.replace(/-/g, "/");
+      console.log({ dateStr, formatted });
       try {
         console.info("\n\n\n\n\n=============================================");
         console.info(
           ":- Processing order: ",
           order.orderNo,
           "index: ",
-          orderIndex
+          Number(orderIndex) + 1,
+          "/",
+          pendingRows.length
         );
-
+        console.log("dateStir: ", dateStr);
+        console.log("formatted: ", formatted);
         await navigateToDocumentManager(page);
 
-        await applyFilter(page, order.orderNo);
+        try {
+          if (!isFilterCleared) {
+            const iframe = page
+              .locator('iframe[name="main-app-iframe"]')
+              .contentFrame();
+            const clearButton = iframe.getByRole("button", {
+              name: "Clear all",
+            });
 
-        // If order exist
-        const link = page
+            // Check if element exists and is visible
+            const isClearButtonPresent =
+              (await clearButton.count()) > 0 &&
+              (await clearButton.isVisible());
+
+            if (isClearButtonPresent) {
+              await clearButton.click();
+              console.log("Clear all button clicked successfully");
+              isFilterCleared = true;
+            } else {
+              console.log("Clear all button does not exist or is not visible");
+              isFilterCleared = true;
+            }
+          }
+        } catch (error) {
+          isFilterCleared = true;
+          console.log(
+            "Error interacting with clear all button:",
+            error.message
+          );
+        }
+
+        await applyFilter(page, order.orderNo);
+        // Get ALL links with the order number
+        const links = page
           .locator('iframe[name="main-app-iframe"]')
           .contentFrame()
           .getByRole("link", { name: order.orderNo });
 
-        if ((await link.count()) === 0) {
+        const linkCount = await links.count();
+
+        if (linkCount === 0) {
           console.info(`${order.orderNo}: Order not found in search results`);
           await writeOrAppendXLSX(processedFilePath, [
             {
@@ -149,18 +187,32 @@ export const processing_script = async (
           ]);
           continue;
         }
-        await link.waitFor({ state: "visible", timeout: 15000 });
-        const trLocator = link.locator("xpath=ancestor::tr[1]");
-        const tdText = await trLocator.locator("td").nth(3).innerText();
-        console.info("Status: ", tdText.trim());
-        // If order havingn status other than "RECEIVED" then skip
 
-        if (tdText.trim() !== "RECEIVED") {
+        let foundReceivedOrder = false;
+        let targetLink = null;
+
+        // Iterate through all links and find the one with RECEIVED status
+        for (let i = 0; i < linkCount; i++) {
+          const currentLink = links.nth(i);
+          const trLocator = currentLink.locator("xpath=ancestor::tr[1]");
+          const tdText = await trLocator.locator("td").nth(3).innerText();
+          const status = tdText.trim();
+          console.info(`Found order ${order.orderNo} with status: ${status}`);
+
+          if (status === "RECEIVED") {
+            foundReceivedOrder = true;
+            targetLink = currentLink;
+            console.info(`✅ Found RECEIVED order at index ${i}`);
+            break; // Found the one we need, no need to check others
+          }
+        }
+
+        if (!foundReceivedOrder) {
           console.info(`Order ${order.orderNo} status is not "RECEIVED"`);
           await writeOrAppendXLSX(processedFilePath, [
             {
               orderNo: order.orderNo,
-              message: `Order found with status ${tdText.trim()}, but not RECEIVED!`,
+              message: `Order found but no instance with RECEIVED status!`,
               status: PROCESS_TYPE.PROCESSED,
               success: false,
               timestamp: new Date().toISOString(),
@@ -169,25 +221,95 @@ export const processing_script = async (
           continue;
         }
 
-        // Click on the link on order no
-        await link.click({
+        // Wait for the target link to be visible and click it
+        await targetLink.waitFor({ state: "visible", timeout: 15000 });
+
+        // Click on the link for the RECEIVED order
+        await targetLink.click({
           waitUntil: "domcontentloaded",
           timeout: 30000,
         });
 
+        console.log(`Clicked on the link for RECEIVED order ${order.orderNo}`);
+        // const links = page
+        //   .locator('iframe[name="main-app-iframe"]')
+        //   .contentFrame()
+        //   .getByRole("link", { name: order.orderNo })
+        //   .all();
+        // // // If order exist
+        // // const link = page
+        // //   .locator('iframe[name="main-app-iframe"]')
+        // //   .contentFrame()
+        // //   .getByRole("link", { name: order.orderNo });
+
+        // if ((await links.count()) === 0) {
+        //   console.info(`${order.orderNo}: Order not found in search results`);
+        //   await writeOrAppendXLSX(processedFilePath, [
+        //     {
+        //       orderNo: order.orderNo,
+        //       message: "Order not found in the table with this orderNo!",
+        //       status: PROCESS_TYPE.PROCESSED,
+        //       success: false,
+        //       timestamp: new Date().toISOString(),
+        //     },
+        //   ]);
+        //   continue;
+        // }
+        // await link.waitFor({ state: "visible", timeout: 15000 });
+        // const trLocator = link.locator("xpath=ancestor::tr[1]");
+        // const tdText = await trLocator.locator("td").nth(3).innerText();
+        // console.info("Status: ", tdText.trim());
+        // // If order havingn status other than "RECEIVED" then skip
+
+        // if (tdText.trim() !== "RECEIVED") {
+        //   console.info(`Order ${order.orderNo} status is not "RECEIVED"`);
+        //   await writeOrAppendXLSX(processedFilePath, [
+        //     {
+        //       orderNo: order.orderNo,
+        //       message: `Order found with status ${tdText.trim()}, but not RECEIVED!`,
+        //       status: PROCESS_TYPE.PROCESSED,
+        //       success: false,
+        //       timestamp: new Date().toISOString(),
+        //     },
+        //   ]);
+        //   continue;
+        // }
+
+        // // Click on the link on order no
+        // await link.click({
+        //   waitUntil: "domcontentloaded",
+        //   timeout: 30000,
+        // });
+
         console.log(`Clicking on the link for order`);
-        await page
-          .locator('iframe[name="main-app-iframe"]')
-          .contentFrame()
-          .locator('iframe[name="legacy-frame"]')
-          .contentFrame()
-          .getByRole("button", { name: "Create Invoice" })
-          .click();
-        await page.waitForLoadState("domcontentloaded");
+        // await page
+        //   .locator('iframe[name="main-app-iframe"]')
+        //   .contentFrame()
+        //   .locator('iframe[name="legacy-frame"]')
+        //   .contentFrame()
+        //   .getByRole("button", { name: "Create Invoice" })
+        //   .click();
+        // await page.waitForLoadState("domcontentloaded");
+
+        // Use Promise.all to wait for both the click and navigation
+        const [response] = await Promise.all([
+          // Wait for navigation to start
+          page.waitForNavigation({
+            waitUntil: "domcontentloaded",
+            timeout: 10000,
+          }),
+          // Click the button
+          page
+            .locator('iframe[name="main-app-iframe"]')
+            .contentFrame()
+            .locator('iframe[name="legacy-frame"]')
+            .contentFrame()
+            .getByRole("button", { name: "Create Invoice" })
+            .click(),
+        ]);
         await page.waitForTimeout(3000);
         console.log(`Clicked on Create Invoice for order`);
 
-        const crtUrl = page.url();
         console.info(":- Comparing the amounts!");
 
         let inputValue = await page
@@ -200,6 +322,8 @@ export const processing_script = async (
         console.log(`Input value for order: ${inputValue}`);
         inputValue = parseFloat(inputValue.replace(/,/g, ""));
 
+        const crtUrl = page.url();
+        console.log("crtUrl is: ", crtUrl);
         if (inputValue < order.totalInvoiceBaseAmount) {
           // wait for 15 sec
           console.log(
@@ -227,8 +351,6 @@ export const processing_script = async (
           .getByRole("textbox", { name: "Invoice number" })
           .fill(order.invoiceNo);
         console.log(`Invoice number filled for order: ${order.orderNo}`);
-        const dateStr = order.invoiceDate;
-        const formatted = dateStr.replace(/-/g, "/");
 
         await page
           .locator('iframe[name="main-app-iframe"]')
@@ -356,7 +478,7 @@ export const processing_script = async (
           console.log("No errors");
         }
 
-        await page.waitForTimeout(10000);
+        await page.waitForTimeout(15000);
       } catch (error) {
         console.log("typeof error :", typeof error);
         console.error(
@@ -478,77 +600,77 @@ export const processing_script = async (
 
   async function applyFilter(page, orderNo) {
     try {
-      await page
-        .locator('iframe[name="main-app-iframe"]')
-        .contentFrame()
-        .locator("div")
-        .filter({ hasText: /^Filter$/ })
-        .click();
-      await page.waitForTimeout(1000);
-      await page
-        .locator('iframe[name="main-app-iframe"]')
-        .contentFrame()
-        .getByRole("button", { name: ")Filter" })
-        .click();
-      await page.waitForTimeout(1000);
-      await page
-        .locator('iframe[name="main-app-iframe"]')
-        .contentFrame()
-        .getByRole("button", { name: "Document Types" })
-        .click();
-      await page.waitForTimeout(1000);
-      await page
-        .locator('iframe[name="main-app-iframe"]')
-        .contentFrame()
-        .locator(".invoice.flex-none")
-        .check();
-      await page.waitForTimeout(1000);
-      await page
-        .locator('iframe[name="main-app-iframe"]')
-        .contentFrame()
-        .getByText("Unselect all")
-        .first()
-        .click();
-      await page.waitForTimeout(1000);
-      await page
-        .locator('iframe[name="main-app-iframe"]')
-        .contentFrame()
-        .locator(".invoice.flex-none")
-        .check();
-      await page.waitForTimeout(1000);
-      await page
-        .locator('iframe[name="main-app-iframe"]')
-        .contentFrame()
-        .locator(".order.flex-none")
-        .check();
-      await page.waitForTimeout(1000);
-      await page
-        .locator('iframe[name="main-app-iframe"]')
-        .contentFrame()
-        .getByRole("button", { name: "Status" })
-        .first()
-        .click();
-      await page.waitForTimeout(1000);
-      await page
-        .locator('iframe[name="main-app-iframe"]')
-        .contentFrame()
-        .locator("div")
-        .filter({ hasText: /^Unselect all$/ })
-        .nth(1)
-        .click();
-      await page
-        .locator('iframe[name="main-app-iframe"]')
-        .contentFrame()
-        .getByText("Unselect all")
-        .nth(1)
-        .click();
-      await page.waitForTimeout(1000);
-      await page
-        .locator('iframe[name="main-app-iframe"]')
-        .contentFrame()
-        .locator(".DELIVERED_RECEIVED.flex-none")
-        .check();
-      await page.waitForTimeout(1000);
+      // await page
+      //   .locator('iframe[name="main-app-iframe"]')
+      //   .contentFrame()
+      //   .locator("div")
+      //   .filter({ hasText: /^Filter$/ })
+      //   .click();
+      // await page.waitForTimeout(1000);
+      // await page
+      //   .locator('iframe[name="main-app-iframe"]')
+      //   .contentFrame()
+      //   .getByRole("button", { name: ")Filter" })
+      //   .click();
+      // await page.waitForTimeout(1000);
+      // await page
+      //   .locator('iframe[name="main-app-iframe"]')
+      //   .contentFrame()
+      //   .getByRole("button", { name: "Document Types" })
+      //   .click();
+      // await page.waitForTimeout(1000);
+      // await page
+      //   .locator('iframe[name="main-app-iframe"]')
+      //   .contentFrame()
+      //   .locator(".invoice.flex-none")
+      //   .check();
+      // await page.waitForTimeout(1000);
+      // await page
+      //   .locator('iframe[name="main-app-iframe"]')
+      //   .contentFrame()
+      //   .getByText("Unselect all")
+      //   .first()
+      //   .click();
+      // await page.waitForTimeout(1000);
+      // await page
+      //   .locator('iframe[name="main-app-iframe"]')
+      //   .contentFrame()
+      //   .locator(".invoice.flex-none")
+      //   .check();
+      // await page.waitForTimeout(1000);
+      // await page
+      //   .locator('iframe[name="main-app-iframe"]')
+      //   .contentFrame()
+      //   .locator(".order.flex-none")
+      //   .check();
+      // await page.waitForTimeout(1000);
+      // await page
+      //   .locator('iframe[name="main-app-iframe"]')
+      //   .contentFrame()
+      //   .getByRole("button", { name: "Status" })
+      //   .first()
+      //   .click();
+      // await page.waitForTimeout(1000);
+      // await page
+      //   .locator('iframe[name="main-app-iframe"]')
+      //   .contentFrame()
+      //   .locator("div")
+      //   .filter({ hasText: /^Unselect all$/ })
+      //   .nth(1)
+      //   .click();
+      // await page
+      //   .locator('iframe[name="main-app-iframe"]')
+      //   .contentFrame()
+      //   .getByText("Unselect all")
+      //   .nth(1)
+      //   .click();
+      // await page.waitForTimeout(1000);
+      // await page
+      //   .locator('iframe[name="main-app-iframe"]')
+      //   .contentFrame()
+      //   .locator(".DELIVERED_RECEIVED.flex-none")
+      //   .check();
+      // await page.waitForTimeout(1000);
 
       // Clear the search field first, then fill with current order number
       const searchBox = page
