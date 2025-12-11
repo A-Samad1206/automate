@@ -242,7 +242,6 @@ app.get("/history", async (req, res) => {
     const allDirs = [];
     for (const dir of dirs) {
       if (!dir.isDirectory()) continue;
-
       const processedFile = path.join(
         baseDir,
         dir.name,
@@ -268,7 +267,7 @@ app.get("/history", async (req, res) => {
         // skip folders without processed.xlsx
       }
     }
-
+    // send back in descending order time/label
     const historyTableData = allDirs.map((dir) => {
       const processedData = dir.processedData;
       const ordersData = dir.ordersData;
@@ -331,7 +330,16 @@ app.get("/history", async (req, res) => {
         processedSuccess,
         processedFailure,
       };
-    });
+    }).sort((a, b) => {
+    
+ const [year, month, day, hour, minute, second] = a.id.split("_");
+  const da = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`);
+
+  const [y2, m2, d2, h2, min2, s2] = b.id.split("_");
+  const db = new Date(`${y2}-${m2}-${d2}T${h2}:${min2}:${s2}`);
+
+  return db - da; // latest first
+});
     return res.json(historyTableData);
   } catch (err) {
     console.error(err);

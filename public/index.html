@@ -127,19 +127,41 @@
 
           <li>Order no</li>
           <li>HFS Invoice No</li>
+       
           <li>
-            HFS Invoice Date. Format must be MM/DD/YYYY or MM-DD-YYYY or
-            MM/DD/YY or MM-DD-YY and cannot be in the future.
-            <div class="alert alert-info mt-2 p-2 small">
-              <strong>Valid examples:</strong> 12/25/2023, 03-15-2024,
-              01/01/2020<br />
-              <strong>Invalid examples:</strong>
-              02/30/2024 (invalid date), 12/25/2030 (future)
-            </div>
+            The date must also be stored in three separate columns:
+  <strong>Day</strong>, <strong>Month</strong>, and <strong>Year</strong>.
           </li>
           <li>IRN NO</li>
           <li>Total Invoice Base Amount</li>
         </ol>
+        <div>
+          <h5>Example: Compulsory columns in the excel sheet</h5>
+          <table class="table table-bordered">
+            <thead>
+              <tr>
+                <th>Order no</th>
+                <th>HFS Invoice No</th>
+                <th>Day</th>
+                <th>Month</th>
+                <th>Year</th>
+                <th>IRN NO</th>
+                <th>Total Invoice Base Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>ORD001</td>
+                <td>INV001</td>
+                <td>15</td>
+                <td>6</td>
+                <td>2025</td>
+                <td>IRN123456789</td>
+                <td>10000.00</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <h5>
           Ensure your sheet starts at cell A1 and has no empty cells in the data
           range.

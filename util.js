@@ -56,7 +56,7 @@ export const getObjFromRow = (
   return {
     orderNo,
     invoiceNo,
-    invoiceDate: [month,day,year].join("/"),
+    invoiceDate: !day || !month || !year ? null : [month,day,year].join("/"),
     irnNo,
     businessArea,
     totalInvoiceBaseAmount,

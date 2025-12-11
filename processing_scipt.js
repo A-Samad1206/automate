@@ -178,11 +178,11 @@ export const processing_script = async (
           console.info(`${order.orderNo}: Order not found in search results`);
           await writeOrAppendXLSX(processedFilePath, [
             {
-              orderNo: order.orderNo,
-              message: "Order not found in the table with this orderNo!",
               status: PROCESS_TYPE.PROCESSED,
               success: false,
               timestamp: new Date().toISOString(),
+              ...order,
+              message: "Order not found in the table with this orderNo!",
             },
           ]);
           continue;
@@ -211,11 +211,11 @@ export const processing_script = async (
           console.info(`Order ${order.orderNo} status is not "RECEIVED"`);
           await writeOrAppendXLSX(processedFilePath, [
             {
-              orderNo: order.orderNo,
-              message: `Order found but no instance with RECEIVED status!`,
               status: PROCESS_TYPE.PROCESSED,
               success: false,
               timestamp: new Date().toISOString(),
+              ...order,
+              message: `Order found but no instance with RECEIVED status!`,
             },
           ]);
           continue;
@@ -332,12 +332,12 @@ export const processing_script = async (
           // await page.waitForTimeout(15000);
           await writeOrAppendXLSX(processedFilePath, [
             {
-              orderNo: order.orderNo,
-              message: `order no: ${order.orderNo} amount on platform is: ${inputValue}, which is less than total invoice base amount found in the sheet: ${order.totalInvoiceBaseAmount}`,
               status: PROCESS_TYPE.PROCESSED,
               success: false,
               timestamp: new Date().toISOString(),
+              ...order,
               url: crtUrl,
+              message: `order no: ${order.orderNo} amount on platform is: ${inputValue}, which is less than total invoice base amount found in the sheet: ${order.totalInvoiceBaseAmount}`,
             },
           ]);
           continue;
@@ -454,24 +454,24 @@ export const processing_script = async (
           console.log("errors in toast: ", errors);
           await writeOrAppendXLSX(processedFilePath, [
             {
-              orderNo: order.orderNo,
-              message: `Order could not been processd due to invalid data!`,
               status: PROCESS_TYPE.PROCESSED,
               success: false,
               timestamp: new Date().toISOString(),
-              errors: errors.toString(),
+              ...order,
               url: crtUrl,
+              message: `Order could not been processd due to invalid data!`,
+              errors: errors.toString(),
             },
           ]);
         } else {
           console.log("✅ No error list found");
           await writeOrAppendXLSX(processedFilePath, [
             {
-              orderNo: order.orderNo,
-              message: "Order have been successfully processd!",
               status: PROCESS_TYPE.PROCESSED,
               success: true,
               timestamp: new Date().toISOString(),
+              ...order,
+              message: "Order have been successfully processd!",
               url: crtUrl,
             },
           ]);
@@ -486,13 +486,13 @@ export const processing_script = async (
         );
         await writeOrAppendXLSX(processedFilePath, [
           {
-            orderNo: order.orderNo,
-            message:
-              "Error while processing order" + error.message ||
-              JSON.stringify(error),
             status: PROCESS_TYPE.NOT_PROCESSED,
             success: false,
             timestamp: new Date().toISOString(),
+            ...order,
+            message:
+              "Error while processing order" + error.message ||
+              JSON.stringify(error),
           },
         ]);
       }
